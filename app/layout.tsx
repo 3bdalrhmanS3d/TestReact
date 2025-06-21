@@ -10,7 +10,7 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "LearnQuest - منصة التعلم الإلكتروني",
   description: "منصة تعليمية متقدمة لتطوير المهارات والمعرفة",
-  generator: "v0.dev",
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({

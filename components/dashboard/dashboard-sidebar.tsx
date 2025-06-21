@@ -1,144 +1,84 @@
 "use client"
 
-import { LayoutDashboard, Settings, BookOpen, Users, BarChart3, Heart, Plus } from "lucide-react"
+import { useState } from "react"
 import Link from "next/link"
-import { useAuth } from "@/hooks/use-auth"
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarGroup,
-  SidebarGroupLabel,
-  SidebarGroupContent,
-} from "@/components/ui/sidebar"
+import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
+import { Home, BookOpen, Heart, User, BarChart3, Bell, Menu, X } from "lucide-react"
+
+const navigation = [
+  { name: "الرئيسية", href: "/dashboard", icon: Home },
+  { name: "دوراتي", href: "/dashboard/my-courses", icon: BookOpen },
+  { name: "المفضلة", href: "/dashboard/favorites", icon: Heart },
+  { name: "الإحصائيات", href: "/dashboard/stats", icon: BarChart3 },
+  { name: "الإشعارات", href: "/dashboard/notifications", icon: Bell },
+  { name: "الملف الشخصي", href: "/dashboard/profile", icon: User },
+]
 
 export default function DashboardSidebar() {
-  const { user } = useAuth()
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const pathname = usePathname()
 
   return (
-    <Sidebar>
-      <SidebarHeader>
-        <div className="p-4">
-          <h2 className="text-lg font-bold text-gray-900">لوحة التحكم</h2>
-          <p className="text-sm text-gray-600">مرحباً، {user?.fullName || user?.name}</p>
+    <>
+      {/* Mobile menu button */}
+      <div className="lg:hidden fixed top-4 right-4 z-50">
+        <Button variant="outline" size="sm" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
+          {isMobileMenuOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
+        </Button>
+      </div>
+
+      {/* Sidebar */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 right-0 z-40 w-64 bg-white border-l border-gray-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:inset-0",
+          isMobileMenuOpen ? "translate-x-0" : "translate-x-full",
+        )}
+      >
+        <div className="flex flex-col h-full">
+          {/* Logo */}
+          <div className="flex items-center justify-center h-16 px-4 border-b border-gray-200">
+            <div className="flex items-center space-x-2 space-x-reverse">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <BookOpen className="w-4 h-4 text-white" />
+              </div>
+              <span className="text-xl font-bold text-gray-900">LearnQuest</span>
+            </div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 px-4 py-6 space-y-2">
+            {navigation.map((item) => {
+              const isActive = pathname === item.href
+              return (
+                <Link
+                  key={item.name}
+                  href={item.href}
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className={cn(
+                    "flex items-center px-4 py-3 text-sm font-medium rounded-lg transition-colors",
+                    isActive
+                      ? "bg-blue-50 text-blue-700 border-r-2 border-blue-700"
+                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900",
+                  )}
+                >
+                  <item.icon className="mr-3 h-5 w-5" />
+                  {item.name}
+                </Link>
+              )
+            })}
+          </nav>
         </div>
-      </SidebarHeader>
+      </aside>
 
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>القائمة الرئيسية</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link href="/dashboard">
-                    <LayoutDashboard className="h-4 w-4" />
-                    نظرة عامة
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link href="/dashboard/my-courses">
-                    <BookOpen className="h-4 w-4" />
-                    دوراتي
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <Link href="/dashboard/favorites">
-                    <Heart className="h-4 w-4" />
-                    المفضلة
-                  </Link>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {user?.role === "Instructor" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>المدرب</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/dashboard/create-course">
-                      <Plus className="h-4 w-4" />
-                      إنشاء دورة
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/instructor/courses">
-                      <BookOpen className="h-4 w-4" />
-                      إدارة الدورات
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {user?.role === "Admin" && (
-          <SidebarGroup>
-            <SidebarGroupLabel>الإدارة</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/dashboard/admin/courses">
-                      <BookOpen className="h-4 w-4" />
-                      إدارة الدورات
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/dashboard/admin/users">
-                      <Users className="h-4 w-4" />
-                      إدارة المستخدمين
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-
-                <SidebarMenuItem>
-                  <SidebarMenuButton asChild>
-                    <Link href="/dashboard/admin/analytics">
-                      <BarChart3 className="h-4 w-4" />
-                      التحليلات
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-      </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild>
-              <Link href="/dashboard/settings">
-                <Settings className="h-4 w-4" />
-                الإعدادات
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-    </Sidebar>
+      {/* Mobile overlay */}
+      {isMobileMenuOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+          onClick={() => setIsMobileMenuOpen(false)}
+        />
+      )}
+    </>
   )
 }
