@@ -192,39 +192,44 @@ class ApiClient {
   }
 
   async signin(data: {
-    email: string
-    password: string
-    rememberMe: boolean
-  }) {
-    const response = await this.request<{
-      accessToken: string
-      refreshToken: string
-      userId: number
-      fullName: string
-      emailAddress: string
-      role: string
-      autoLoginToken?: string
-    }>("/Auth/signin", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
+  email: string
+  password: string
+  rememberMe: boolean
+}) {
+  const response = await this.request<{
+    accessToken: string
+    refreshToken: string
+    userId: number
+    fullName: string
+    emailAddress: string
+    role: string
+    autoLoginToken?: string
+  }>("/Auth/signin", {
+    method: "POST",
+    body: JSON.stringify({
+      email:      data.email,
+      password:   data.password,
+      rememberMe: data.rememberMe,
+    }),
+  })
 
-    if (response.success && response.data && typeof window !== "undefined") {
-      localStorage.setItem("accessToken", response.data.accessToken)
-      localStorage.setItem("refreshToken", response.data.refreshToken)
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          userId: response.data.userId,
-          fullName: response.data.fullName,
-          emailAddress: response.data.emailAddress,
-          role: response.data.role,
-        }),
-      )
-    }
-
-    return response
+  if (response.success && response.data && typeof window !== "undefined") {
+    localStorage.setItem("accessToken", response.data.accessToken)
+    localStorage.setItem("refreshToken", response.data.refreshToken)
+    localStorage.setItem(
+      "user",
+      JSON.stringify({
+        userId:       response.data.userId,
+        fullName:     response.data.fullName,
+        emailAddress: response.data.emailAddress,
+        role:         response.data.role,
+      }),
+    )
   }
+
+  return response
+}
+
 
   async refreshToken() {
     if (typeof window === "undefined") {
