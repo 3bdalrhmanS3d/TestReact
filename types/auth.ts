@@ -4,6 +4,7 @@ export interface SignupRequestDto {
   lastName: string
   emailAddress: string
   password: string
+  userConfPassword: string
 }
 
 export interface SigninRequestDto {
@@ -69,6 +70,18 @@ export interface SecureAuthResponse<T = any> {
   errorCode?: string
   timestamp: string
   requestId: string
+}
+
+// AuthUser interface for our app
+export interface AuthUser {
+  id: number
+  userId: number
+  email: string
+  emailAddress: string
+  name?: string
+  fullName?: string
+  role: string
+  profilePhoto?: string
 }
 
 // User Profile Types

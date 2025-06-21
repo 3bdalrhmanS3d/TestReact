@@ -2,24 +2,18 @@
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
 import { authApi } from "@/lib/auth-api"
+import { profileApi } from "@/lib/profile-api"
 import type {
   SignupRequestDto,
   SigninRequestDto,
   VerifyAccountRequestDto,
   ForgetPasswordRequestDto,
   ResetPasswordRequestDto,
+  AuthUser,
 } from "@/types/auth"
 
-interface User {
-  userId: number
-  fullName: string
-  emailAddress: string
-  role: string
-  profilePhoto: string
-}
-
 interface AuthContextType {
-  user: User | null
+  user: AuthUser | null
   loading: boolean
   error: string | null
   apiAvailable: boolean
@@ -42,7 +36,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [apiAvailable, setApiAvailable] = useState(false)
@@ -82,10 +76,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         if (autoLoginResult.success && autoLoginResult.data) {
           console.log("✅ Auto-login successful")
-          const userData = {
+          const userData: AuthUser = {
+            id: autoLoginResult.data.userId,
             userId: autoLoginResult.data.userId,
-            fullName: autoLoginResult.data.fullName,
+            email: autoLoginResult.data.emailAddress,
             emailAddress: autoLoginResult.data.emailAddress,
+            name: autoLoginResult.data.fullName,
+            fullName: autoLoginResult.data.fullName,
             role: autoLoginResult.data.role,
             profilePhoto: "/uploads/profile-pictures/default_user.webp",
           }
@@ -97,14 +94,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.log("ℹ️ No valid auto-login session found")
         }
       } else {
-        // Validate existing token by trying to refresh
+        // Validate existing token by getting profile
         console.log("🔄 Validating existing token...")
-        const refreshResult = await refreshTokenInternal()
-        if (!refreshResult) {
-          // Token invalid, clear storage
-          localStorage.removeItem("accessToken")
-          localStorage.removeItem("refreshToken")
-          setUser(null)
+        const profileResult = await profileApi.getProfile()
+
+        if (profileResult.success && profileResult.data) {
+          const userData: AuthUser = {
+            id: profileResult.data.id,
+            userId: profileResult.data.id,
+            email: profileResult.data.emailAddress,
+            emailAddress: profileResult.data.emailAddress,
+            name: profileResult.data.fullName,
+            fullName: profileResult.data.fullName,
+            role: profileResult.data.role,
+            profilePhoto: profileResult.data.profilePhoto,
+          }
+          setUser(userData)
+        } else {
+          // Token invalid, try refresh
+          const refreshResult = await refreshTokenInternal()
+          if (!refreshResult) {
+            // Clear invalid tokens
+            localStorage.removeItem("accessToken")
+            localStorage.removeItem("refreshToken")
+            setUser(null)
+          }
         }
       }
     } catch (error) {
@@ -127,10 +141,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("accessToken", result.data.token)
         localStorage.setItem("refreshToken", result.data.refreshToken)
 
-        // Update user data if needed
-        if (result.data.userId && !user) {
-          // Fetch user profile to get complete data
-          // This would require a profile API call
+        // Get updated profile
+        const profileResult = await profileApi.getProfile()
+        if (profileResult.success && profileResult.data) {
+          const userData: AuthUser = {
+            id: profileResult.data.id,
+            userId: profileResult.data.id,
+            email: profileResult.data.emailAddress,
+            emailAddress: profileResult.data.emailAddress,
+            name: profileResult.data.fullName,
+            fullName: profileResult.data.fullName,
+            role: profileResult.data.role,
+            profilePhoto: profileResult.data.profilePhoto,
+          }
+          setUser(userData)
         }
 
         return true
@@ -190,19 +214,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await authApi.signin(data)
 
       if (result.success && result.data) {
-        const userData = {
-          userId: result.data.userId,
-          fullName: "", // Will be filled from profile
-          emailAddress: data.email,
-          role: result.data.role,
-          profilePhoto: "/uploads/profile-pictures/default_user.webp",
+        // Get user profile after successful signin
+        const profileResult = await profileApi.getProfile()
+
+        if (profileResult.success && profileResult.data) {
+          const userData: AuthUser = {
+            id: profileResult.data.id,
+            userId: profileResult.data.id,
+            email: profileResult.data.emailAddress,
+            emailAddress: profileResult.data.emailAddress,
+            name: profileResult.data.fullName,
+            fullName: profileResult.data.fullName,
+            role: profileResult.data.role,
+            profilePhoto: profileResult.data.profilePhoto,
+          }
+          setUser(userData)
+        } else {
+          // Fallback user data from signin response
+          const userData: AuthUser = {
+            id: result.data.userId,
+            userId: result.data.userId,
+            email: data.email,
+            emailAddress: data.email,
+            name: "",
+            fullName: "",
+            role: result.data.role,
+            profilePhoto: "/uploads/profile-pictures/default_user.webp",
+          }
+          setUser(userData)
         }
 
-        setUser(userData)
-        localStorage.setItem("accessToken", result.data.token)
-        localStorage.setItem("refreshToken", result.data.refreshToken)
         setApiAvailable(true)
-
         return { success: true }
       }
 

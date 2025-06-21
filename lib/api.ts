@@ -1,12 +1,9 @@
-// lib/api.ts
+// Updated API client to match backend endpoints
+import { profileApi } from "./profile-api"
 
-// جرب كلا العنوانين - HTTP أولاً ثم HTTPS
-const API_ENDPOINTS = [
-  "http://localhost:5268/api",
-  "https://localhost:7217/api"
-]
+// API endpoints configuration
+const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
 
-// نخزّن هنا العنوان الذي نجح
 let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
 
 export interface ApiResponse<T = any> {
@@ -19,26 +16,21 @@ export interface ApiResponse<T = any> {
 
 class ApiClient {
   private getAuthHeaders(): HeadersInit {
-    const token = typeof window !== "undefined"
-      ? localStorage.getItem("accessToken")
-      : null
+    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
     }
   }
 
-  // يجرب كل endpoint محفوظ
+  // Find working endpoint
   private async findWorkingEndpoint(): Promise<string | null> {
     for (const endpoint of API_ENDPOINTS) {
       try {
         console.log(`🔍 Testing endpoint: ${endpoint}`)
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 3000)
-        const res = await fetch(
-          `${endpoint.replace("/api", "")}/health`,
-          { signal: controller.signal }
-        )
+        const res = await fetch(`${endpoint.replace("/api", "")}/health`, { signal: controller.signal })
         clearTimeout(timeoutId)
         if (res.ok) {
           console.log(`✅ Found working endpoint: ${endpoint}`)
@@ -53,12 +45,9 @@ class ApiClient {
     return null
   }
 
-  // الدالة الرئيسية لإرسال الطلبات
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<ApiResponse<T>> {
-    // تأكد من endpoint صالح
+  // Main request method
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    // Ensure we have a working endpoint
     const base = await this.findWorkingEndpoint()
     if (!base) {
       return {
@@ -100,11 +89,7 @@ class ApiClient {
 
       if (!res.ok) {
         console.warn("❌ API Warning:", data)
-        const msg =
-          data.message ??
-          data.Message ??
-          res.statusText ??
-          `خطأ في الخادم (${res.status})`
+        const msg = data.message ?? data.Message ?? res.statusText ?? `خطأ في الخادم (${res.status})`
         return {
           success: false,
           message: msg,
@@ -126,9 +111,7 @@ class ApiClient {
       if (err.message.includes("fetch")) {
         return {
           success: false,
-          message: `فشل في الاتصال بالخادم. العناوين المفحوصة:\n${API_ENDPOINTS.join(
-            "\n"
-          )}`,
+          message: `فشل في الاتصال بالخادم. العناوين المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
         }
       }
       return {
@@ -138,80 +121,16 @@ class ApiClient {
     }
   }
 
-  // ==== Auth Endpoints ====
-  async signup(data: {
-    fullName: string
-    emailAddress: string
-    password: string
-  }) {
-    console.log("🔐 Signup for:", data.emailAddress)
-    return this.request("/Auth/signup", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
+  // Test connection
+  async testConnection(): Promise<boolean> {
+    const endpoint = await this.findWorkingEndpoint()
+    return endpoint !== null
   }
 
-  async verifyAccount(data: { verificationCode: string }) {
-    return this.request("/Auth/verify-account", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-
-  async resendVerificationCode() {
-    return this.request("/Auth/resend-verification-code", {
-      method: "POST",
-    })
-  }
-
-  async signin(data: {
-    email: string
-    password: string
-    rememberMe: boolean
-  }) {
-    const response = await this.request<{
-      accessToken: string
-      refreshToken: string
-      userId: number
-      fullName: string
-      emailAddress: string
-      role: string
-    }>("/Auth/signin", {
-      method: "POST",
-      body: JSON.stringify({
-        email:      data.email,
-        password:   data.password,
-        rememberMe: data.rememberMe,
-      }),
-    })
-
-    if (response.success && response.data && typeof window !== "undefined") {
-      localStorage.setItem("accessToken", response.data.accessToken)
-      localStorage.setItem("refreshToken", response.data.refreshToken)
-      localStorage.setItem(
-        "user",
-        JSON.stringify({
-          userId:       response.data.userId,
-          fullName:     response.data.fullName,
-          emailAddress: response.data.emailAddress,
-          role:         response.data.role,
-        })
-      )
-    }
-
-    return response
-  }
-
-  // ==== Dashboard Endpoints ====
+  // Dashboard Endpoints - Updated to match backend
   async getUserStats() {
-    return this.request<{
-      sharedCourses: number
-      completedSections: number
-      progress: Array<{
-        courseId: number
-        progressPercentage: number
-      }>
-    }>("/User/stats", { method: "GET" })
+    // Use profile API for user stats
+    return profileApi.getUserStats()
   }
 
   async searchCourses(search?: string) {
@@ -224,62 +143,25 @@ class ApiClient {
         courseImage: string
         coursePrice: number
       }>
-    >(`/User/search-courses${params}`, { method: "GET" })
+    >(`/courses/search${params}`, { method: "GET" })
   }
 
-  // ==== Token Management ====
-  async refreshToken() {
-    if (typeof window === "undefined") {
-      throw new Error("No refresh token available")
-    }
-    const token = localStorage.getItem("refreshToken")
-    if (!token) throw new Error("No refresh token available")
-
-    const response = await this.request<{
-      accessToken: string
-      refreshToken: string
-    }>("/Auth/refresh-token", {
-      method: "POST",
-      body: JSON.stringify({ refreshToken: token }),
-    })
-
-    if (response.success && response.data) {
-      localStorage.setItem("accessToken", response.data.accessToken)
-      localStorage.setItem("refreshToken", response.data.refreshToken)
-    }
-    return response
+  // Course endpoints
+  async getCourses() {
+    return this.request("/courses", { method: "GET" })
   }
 
-  async autoLoginFromCookie() {
-    return this.request("/Auth/auto-login-from-cookie", { method: "POST" })
+  async getCourse(courseId: number) {
+    return this.request(`/courses/${courseId}`, { method: "GET" })
   }
 
-  // ==== Password Endpoints ====
-  async forgetPassword(data: { email: string }) {
-    return this.request("/Auth/forget-password", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
+  // User endpoints
+  async getProfile() {
+    return profileApi.getProfile()
   }
 
-  async resetPassword(data: {
-    token: string
-    newPassword: string
-  }) {
-    return this.request("/Auth/reset-password", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-
-  async logout() {
-    const response = await this.request("/Auth/logout", { method: "POST" })
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("refreshToken")
-      localStorage.removeItem("user")
-    }
-    return response
+  async updateProfile(data: any) {
+    return profileApi.updateProfile(data)
   }
 }
 

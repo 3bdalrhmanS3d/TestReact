@@ -1,12 +1,12 @@
 "use client"
 
 import type React from "react"
-
 import { useAuth } from "@/hooks/use-auth"
 import { useRouter } from "next/navigation"
 import { useEffect } from "react"
 import DashboardHeader from "@/components/dashboard/dashboard-header"
 import DashboardSidebar from "@/components/dashboard/dashboard-sidebar"
+import { SidebarProvider } from "@/components/ui/sidebar"
 import { Loader2 } from "lucide-react"
 
 export default function DashboardLayout({
@@ -39,12 +39,14 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      <DashboardSidebar />
-      <div className="flex-1 lg:mr-64">
-        <DashboardHeader />
-        <main className="p-6">{children}</main>
+    <SidebarProvider>
+      <div className="min-h-screen bg-gray-50 flex">
+        <DashboardSidebar />
+        <div className="flex-1 lg:mr-64">
+          <DashboardHeader />
+          <main className="p-6">{children}</main>
+        </div>
       </div>
-    </div>
+    </SidebarProvider>
   )
 }

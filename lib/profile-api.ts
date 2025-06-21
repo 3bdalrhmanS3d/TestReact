@@ -3,15 +3,17 @@ import type {
   UserProfileUpdateDto,
   ChangeUserNameDto,
   ChangePasswordDto,
-  ChangeUserNameResultDto,
   PaymentRequestDto,
   MyCourseDto,
   CourseDto,
-  StudentStatsDto,
   UserActivityDto,
+  StudentStatsDto,
 } from "@/types/auth"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"
+// API endpoints configuration
+const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
+
+let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
 
 interface ApiResponse<T = any> {
   success: boolean
@@ -23,8 +25,28 @@ interface ApiResponse<T = any> {
 }
 
 class ProfileApiClient {
+  private async findWorkingEndpoint(): Promise<string | null> {
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000)
+
+        const res = await fetch(`${endpoint.replace("/api", "")}/health`, { signal: controller.signal })
+        clearTimeout(timeoutId)
+
+        if (res.ok) {
+          CURRENT_API_BASE_URL = endpoint
+          return endpoint
+        }
+      } catch (err) {
+        // Continue to next endpoint
+      }
+    }
+    return null
+  }
+
   private getAuthHeaders(): HeadersInit {
-    const token = localStorage.getItem("accessToken")
+    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -32,142 +54,194 @@ class ProfileApiClient {
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    const url = `${API_BASE_URL}${endpoint}`
+    const base = await this.findWorkingEndpoint()
+    if (!base) {
+      return {
+        success: false,
+        message: "الخادم غير متاح حالياً",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
+    }
+
+    const url = `${base}${endpoint}`
 
     try {
-      const response = await fetch(url, {
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 15000)
+
+      const res = await fetch(url, {
         ...options,
         headers: {
           ...this.getAuthHeaders(),
           ...options.headers,
         },
         credentials: "include",
+        signal: controller.signal,
       })
+      clearTimeout(timeoutId)
 
-      const data = await response.json()
+      let data: any
+      const ct = res.headers.get("content-type") || ""
+      if (ct.includes("application/json")) {
+        data = await res.json()
+      } else {
+        const txt = await res.text()
+        data = { message: txt || res.statusText }
+      }
 
-      if (!response.ok) {
+      if (!res.ok) {
         return {
           success: false,
-          message: data.message || `HTTP ${response.status}`,
+          message: data.message ?? res.statusText,
           errors: data.errors,
           timestamp: new Date().toISOString(),
-          requestId: data.requestId || Math.random().toString(36).substr(2, 9),
+          requestId: Math.random().toString(36).substr(2, 8),
         }
       }
 
       return {
         success: true,
-        message: data.message || "Success",
-        data: data.data || data,
+        data: data.data ?? data,
+        message: data.message ?? "Success",
         timestamp: new Date().toISOString(),
-        requestId: data.requestId || Math.random().toString(36).substr(2, 9),
+        requestId: Math.random().toString(36).substr(2, 8),
       }
-    } catch (error) {
-      console.error("Profile API Error:", error)
+    } catch (err: any) {
       return {
         success: false,
-        message: "Network error occurred",
+        message: "حدث خطأ في الشبكة",
         timestamp: new Date().toISOString(),
-        requestId: Math.random().toString(36).substr(2, 9),
+        requestId: Math.random().toString(36).substr(2, 8),
       }
     }
   }
 
-  // Profile Management
-  async getProfile(): Promise<ApiResponse<UserProfileDto>> {
+  // Profile endpoints
+  async getDashboard() {
+    return this.request("/profile/dashboard")
+  }
+
+  async getProfile() {
     return this.request<UserProfileDto>("/profile")
   }
 
-  async updateProfile(data: UserProfileUpdateDto): Promise<ApiResponse> {
+  async updateProfile(data: UserProfileUpdateDto) {
     return this.request("/profile/update", {
       method: "POST",
       body: JSON.stringify(data),
     })
   }
 
-  async changeUserName(data: ChangeUserNameDto): Promise<ApiResponse<ChangeUserNameResultDto>> {
-    return this.request<ChangeUserNameResultDto>("/profile/change-name", {
+  async changeUserName(data: ChangeUserNameDto) {
+    return this.request("/profile/change-name", {
       method: "POST",
       body: JSON.stringify(data),
     })
   }
 
-  async changePassword(data: ChangePasswordDto): Promise<ApiResponse> {
+  async changePassword(data: ChangePasswordDto) {
     return this.request("/profile/change-password", {
       method: "POST",
       body: JSON.stringify(data),
     })
   }
 
-  // Photo Management
-  async uploadProfilePhoto(file: File): Promise<ApiResponse> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    return this.request("/profile/upload-photo", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("accessToken")}`,
-      },
-      body: formData,
-    })
-  }
-
-  async deleteProfilePhoto(): Promise<ApiResponse> {
-    return this.request("/profile/delete-photo", {
-      method: "DELETE",
-    })
-  }
-
-  // Payment Management
-  async payForCourse(data: PaymentRequestDto): Promise<ApiResponse> {
+  // Payment endpoints
+  async payForCourse(data: PaymentRequestDto) {
     return this.request("/profile/pay-course", {
       method: "POST",
       body: JSON.stringify(data),
     })
   }
 
-  async confirmPayment(paymentId: number): Promise<ApiResponse> {
+  async confirmPayment(paymentId: number) {
     return this.request(`/profile/confirm-payment/${paymentId}`, {
       method: "POST",
     })
   }
 
-  // Course Management
-  async getMyCourses(): Promise<ApiResponse<{ count: number; courses: MyCourseDto[] }>> {
-    return this.request<{ count: number; courses: MyCourseDto[] }>("/profile/my-courses")
+  // Course endpoints
+  async getMyCourses() {
+    return this.request<MyCourseDto[]>("/profile/my-courses")
   }
 
-  async getFavoriteCourses(): Promise<ApiResponse<{ count: number; favorites: CourseDto[] }>> {
-    return this.request<{ count: number; favorites: CourseDto[] }>("/profile/favorite-courses")
+  async getFavoriteCourses() {
+    return this.request<CourseDto[]>("/profile/favorite-courses")
   }
 
-  async addToFavorites(courseId: number): Promise<ApiResponse> {
+  async addToFavorites(courseId: number) {
     return this.request(`/profile/favorites/${courseId}`, {
       method: "POST",
     })
   }
 
-  async removeFromFavorites(courseId: number): Promise<ApiResponse> {
+  async removeFromFavorites(courseId: number) {
     return this.request(`/profile/favorites/${courseId}`, {
       method: "DELETE",
     })
   }
 
-  // Statistics
-  async getUserStats(): Promise<ApiResponse<StudentStatsDto>> {
+  // Photo endpoints
+  async uploadProfilePhoto(file: File) {
+    const formData = new FormData()
+    formData.append("file", file)
+
+    const base = await this.findWorkingEndpoint()
+    if (!base) {
+      return {
+        success: false,
+        message: "الخادم غير متاح حالياً",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
+    }
+
+    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+
+    try {
+      const res = await fetch(`${base}/profile/upload-photo`, {
+        method: "POST",
+        headers: {
+          ...(token && { Authorization: `Bearer ${token}` }),
+        },
+        credentials: "include",
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      return {
+        success: res.ok,
+        data: res.ok ? data.data : undefined,
+        message: data.message,
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
+    } catch (err) {
+      return {
+        success: false,
+        message: "حدث خطأ أثناء رفع الصورة",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
+    }
+  }
+
+  async deleteProfilePhoto() {
+    return this.request("/profile/delete-photo", {
+      method: "DELETE",
+    })
+  }
+
+  // Stats endpoint
+  async getUserStats() {
     return this.request<StudentStatsDto>("/profile/stats")
   }
 
-  // Dashboard
-  async getDashboard(): Promise<ApiResponse> {
-    return this.request("/profile/dashboard")
-  }
-
-  // Activities
-  async getRecentActivities(limit = 10): Promise<ApiResponse<UserActivityDto[]>> {
-    return this.request<UserActivityDto[]>(`/profile/activities?limit=${limit}`)
+  // Activity endpoint
+  async getRecentActivities(limit = 10) {
+    return this.request<UserActivityDto[]>(`/profile/recent-activities?limit=${limit}`)
   }
 }
 
