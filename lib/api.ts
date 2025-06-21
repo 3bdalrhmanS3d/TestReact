@@ -1,4 +1,5 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7001/api"
+// تحديث عنوان API ليتطابق مع الخادم الفعلي
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:5268/api"
 
 export interface ApiResponse<T = any> {
   success: boolean

@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, Wifi, WifiOff, RefreshCw, Server, Globe } from "lucide-react"
+import { Loader2, Wifi, WifiOff, RefreshCw, Server, Globe, ExternalLink } from "lucide-react"
 
 export default function ApiDebug() {
   const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "disconnected">("checking")
@@ -23,7 +23,7 @@ export default function ApiDebug() {
   })
 
   useEffect(() => {
-    setApiUrl(process.env.NEXT_PUBLIC_API_URL || "https://localhost:7001/api")
+    setApiUrl(process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api")
     testConnection()
   }, [])
 
@@ -40,33 +40,41 @@ export default function ApiDebug() {
     try {
       // Test 1: Health endpoint
       try {
-        const healthResponse = await fetch(`${apiUrl.replace("/api", "")}/health`, {
+        const healthUrl = `${apiUrl.replace("/api", "")}/health`
+        console.log("🏥 Testing health endpoint:", healthUrl)
+
+        const healthResponse = await fetch(healthUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         })
         results.healthCheck = healthResponse.ok
+        console.log("Health check result:", results.healthCheck)
       } catch (error) {
         console.log("Health check failed:", error)
       }
 
       // Test 2: Base API endpoint
       try {
+        console.log("🌐 Testing base API endpoint:", apiUrl)
         const apiResponse = await fetch(apiUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
         })
         results.baseApi = true // Even 404 means server is responding
+        console.log("Base API test result:", results.baseApi, "Status:", apiResponse.status)
       } catch (error) {
         console.log("Base API test failed:", error)
       }
 
       // Test 3: CORS test with a simple endpoint
       try {
+        console.log("🔗 Testing CORS with Auth endpoint...")
         const corsResponse = await fetch(`${apiUrl}/Auth/signup`, {
           method: "OPTIONS",
           headers: { "Content-Type": "application/json" },
         })
         results.corsEnabled = corsResponse.ok || corsResponse.status === 405 // 405 means method not allowed but CORS works
+        console.log("CORS test result:", results.corsEnabled, "Status:", corsResponse.status)
       } catch (error) {
         console.log("CORS test failed:", error)
       }
@@ -189,12 +197,39 @@ export default function ApiDebug() {
           )}
         </Button>
 
+        {/* Quick Links */}
+        {connectionStatus === "connected" && (
+          <div className="space-y-2 pt-2 border-t">
+            <span className="text-sm font-medium">روابط سريعة:</span>
+            <div className="flex flex-col gap-1">
+              <a
+                href="https://localhost:7217/health"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Health Check
+              </a>
+              <a
+                href="https://localhost:7217/swagger"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-xs text-blue-600 hover:underline"
+              >
+                <ExternalLink className="h-3 w-3" />
+                Swagger UI
+              </a>
+            </div>
+          </div>
+        )}
+
         {connectionStatus === "disconnected" && (
           <Alert variant="destructive">
             <AlertDescription className="text-xs">
               <strong>نصائح لحل المشكلة:</strong>
               <ul className="mt-2 space-y-1 list-disc list-inside">
-                <li>تأكد من تشغيل الخادم الخلفي على المنفذ الصحيح</li>
+                <li>تأكد من تشغيل الخادم الخلفي على المنفذ 7217</li>
                 <li>تحقق من إعدادات CORS في Program.cs</li>
                 <li>تأكد من أن عنوان API صحيح في متغيرات البيئة</li>
                 <li>تحقق من أن الخادم يقبل HTTPS requests</li>
