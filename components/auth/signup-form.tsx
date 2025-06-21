@@ -12,21 +12,21 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Eye, EyeOff, Mail, Lock, User, CheckCircle, XCircle } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
-import { apiClient } from "@/lib/api"
+import type { SignupRequestDto } from "@/types/auth"
 
 export default function SignupForm() {
-  const [formData, setFormData] = useState({
-    fullName: "",
+  const [formData, setFormData] = useState<SignupRequestDto>({
+    firstName: "",
+    lastName: "",
     emailAddress: "",
     password: "",
-    confirmPassword: "",
   })
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
   const [success, setSuccess] = useState("")
-  const [connectionStatus, setConnectionStatus] = useState<"checking" | "connected" | "disconnected">("checking")
   const [passwordValidation, setPasswordValidation] = useState({
     minLength: false,
     hasUpper: false,
@@ -35,13 +35,8 @@ export default function SignupForm() {
     hasSpecial: false,
   })
 
-  const { signup } = useAuth()
+  const { signup, apiAvailable } = useAuth()
   const router = useRouter()
-
-  // Test API connection on component mount
-  useEffect(() => {
-    testApiConnection()
-  }, [])
 
   // Validate password in real-time
   useEffect(() => {
@@ -55,15 +50,6 @@ export default function SignupForm() {
     })
   }, [formData.password])
 
-  const testApiConnection = async () => {
-    try {
-      const isConnected = await apiClient.testConnection()
-      setConnectionStatus(isConnected ? "connected" : "disconnected")
-    } catch {
-      setConnectionStatus("disconnected")
-    }
-  }
-
   const isPasswordValid = () => {
     return Object.values(passwordValidation).every(Boolean)
   }
@@ -74,18 +60,15 @@ export default function SignupForm() {
     setError("")
     setSuccess("")
 
-    console.log("📝 Starting signup process...")
-
-    // Test connection first
-    if (connectionStatus === "disconnected") {
-      setError("لا يمكن الاتصال بالخادم. تحقق من أن الخادم يعمل.")
+    // Validation
+    if (!formData.firstName.trim()) {
+      setError("الاسم الأول مطلوب")
       setLoading(false)
       return
     }
 
-    // Validation
-    if (!formData.fullName.trim()) {
-      setError("الاسم الكامل مطلوب")
+    if (!formData.lastName.trim()) {
+      setError("الاسم الأخير مطلوب")
       setLoading(false)
       return
     }
@@ -96,7 +79,7 @@ export default function SignupForm() {
       return
     }
 
-    if (formData.password !== formData.confirmPassword) {
+    if (formData.password !== confirmPassword) {
       setError("كلمات المرور غير متطابقة")
       setLoading(false)
       return
@@ -108,21 +91,11 @@ export default function SignupForm() {
       return
     }
 
-    console.log("📝 Submitting signup form with data:", {
-      fullName: formData.fullName,
-      emailAddress: formData.emailAddress,
-      passwordLength: formData.password.length,
-    })
-
     try {
-      const result = await signup(formData.fullName, formData.emailAddress, formData.password)
-
-      console.log("📡 Signup result:", result)
+      const result = await signup(formData)
 
       if (result.success) {
         setSuccess(result.message || "تم إرسال رمز التحقق إلى بريدك الإلكتروني")
-        // Store email for verification page
-        localStorage.setItem("pendingVerificationEmail", formData.emailAddress)
         setTimeout(() => {
           router.push("/auth/verify-account")
         }, 2000)
@@ -152,21 +125,12 @@ export default function SignupForm() {
     <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 flex items-center justify-center p-4">
       <div className="w-full max-w-md space-y-6">
         {/* Connection Status */}
-        {connectionStatus === "checking" && (
-          <Alert>
-            <AlertDescription className="flex items-center">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              جاري فحص الاتصال بالخادم...
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {connectionStatus === "disconnected" && (
+        {!apiAvailable && (
           <Alert variant="destructive">
             <AlertDescription>
               ⚠️ لا يمكن الاتصال بالخادم. تأكد من تشغيل الخادم على:{" "}
               <code className="bg-red-100 px-1 rounded text-xs">
-                {process.env.NEXT_PUBLIC_API_URL || "https://localhost:7001/api"}
+                {process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"}
               </code>
             </AlertDescription>
           </Alert>
@@ -197,20 +161,35 @@ export default function SignupForm() {
                 </Alert>
               )}
 
-              <div className="space-y-2">
-                <Label htmlFor="fullName" className="text-sm font-medium text-gray-700">
-                  الاسم الكامل
-                </Label>
-                <div className="relative">
-                  <User className="absolute right-3 top-3 h-4 w-4 text-gray-400" />
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="firstName" className="text-sm font-medium text-gray-700">
+                    الاسم الأول
+                  </Label>
                   <Input
-                    id="fullName"
-                    name="fullName"
+                    id="firstName"
+                    name="firstName"
                     type="text"
-                    value={formData.fullName}
+                    value={formData.firstName}
                     onChange={handleChange}
-                    className="pr-10 h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
-                    placeholder="أدخل اسمك الكامل"
+                    className="h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                    placeholder="أدخل اسمك الأول"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lastName" className="text-sm font-medium text-gray-700">
+                    الاسم الأخير
+                  </Label>
+                  <Input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    value={formData.lastName}
+                    onChange={handleChange}
+                    className="h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
+                    placeholder="أدخل اسمك الأخير"
                     required
                   />
                 </div>
@@ -302,8 +281,8 @@ export default function SignupForm() {
                     id="confirmPassword"
                     name="confirmPassword"
                     type={showConfirmPassword ? "text" : "password"}
-                    value={formData.confirmPassword}
-                    onChange={handleChange}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     className="pr-10 pl-10 h-11 border-gray-200 focus:border-green-500 focus:ring-green-500"
                     placeholder="أعد إدخال كلمة المرور"
                     required
@@ -317,7 +296,7 @@ export default function SignupForm() {
                     {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
-                {formData.confirmPassword && formData.password !== formData.confirmPassword && (
+                {confirmPassword && formData.password !== confirmPassword && (
                   <p className="text-xs text-red-600 flex items-center">
                     <XCircle className="h-3 w-3 mr-1" />
                     كلمات المرور غير متطابقة
@@ -328,7 +307,7 @@ export default function SignupForm() {
               <Button
                 type="submit"
                 className="w-full h-11 bg-gradient-to-r from-green-600 to-blue-600 hover:from-green-700 hover:to-blue-700 text-white font-medium"
-                disabled={loading || connectionStatus === "disconnected"}
+                disabled={loading || !apiAvailable}
               >
                 {loading ? (
                   <>

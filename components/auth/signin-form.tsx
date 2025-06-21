@@ -13,9 +13,10 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Eye, EyeOff, Mail, Lock } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
+import type { SigninRequestDto } from "@/types/auth"
 
 export default function SigninForm() {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<SigninRequestDto>({
     email: "",
     password: "",
     rememberMe: false,
@@ -24,7 +25,7 @@ export default function SigninForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
 
-  const { login } = useAuth()
+  const { signin, apiAvailable } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,7 +33,7 @@ export default function SigninForm() {
     setLoading(true)
     setError("")
 
-    const result = await login(formData.email, formData.password, formData.rememberMe)
+    const result = await signin(formData)
 
     if (result.success) {
       router.push("/dashboard")
@@ -69,6 +70,12 @@ export default function SigninForm() {
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
+            {!apiAvailable && (
+              <Alert variant="destructive">
+                <AlertDescription>⚠️ لا يمكن الاتصال بالخادم. تحقق من أن الخادم يعمل.</AlertDescription>
               </Alert>
             )}
 
@@ -142,7 +149,7 @@ export default function SigninForm() {
             <Button
               type="submit"
               className="w-full h-11 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-medium"
-              disabled={loading}
+              disabled={loading || !apiAvailable}
             >
               {loading ? (
                 <>

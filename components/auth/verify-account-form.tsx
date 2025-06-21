@@ -12,6 +12,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2, Shield, RefreshCw, Mail } from "lucide-react"
 import { useAuth } from "@/hooks/use-auth"
+import type { VerifyAccountRequestDto } from "@/types/auth"
 
 export default function VerifyAccountForm() {
   const [verificationCode, setVerificationCode] = useState("")
@@ -21,7 +22,7 @@ export default function VerifyAccountForm() {
   const [success, setSuccess] = useState("")
   const [pendingEmail, setPendingEmail] = useState("")
 
-  const { verifyAccount, resendCode } = useAuth()
+  const { verifyAccount, resendCode, apiAvailable } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
@@ -50,7 +51,11 @@ export default function VerifyAccountForm() {
       return
     }
 
-    const result = await verifyAccount(verificationCode)
+    const data: VerifyAccountRequestDto = {
+      verificationCode: verificationCode,
+    }
+
+    const result = await verifyAccount(data)
 
     if (result.success) {
       setSuccess(result.message || "تم تفعيل الحساب بنجاح")
@@ -122,6 +127,12 @@ export default function VerifyAccountForm() {
               </Alert>
             )}
 
+            {!apiAvailable && (
+              <Alert variant="destructive">
+                <AlertDescription>⚠️ لا يمكن الاتصال بالخادم. تحقق من أن الخادم يعمل.</AlertDescription>
+              </Alert>
+            )}
+
             <div className="space-y-2">
               <Label htmlFor="verificationCode" className="text-sm font-medium text-gray-700">
                 رمز التحقق (6 أرقام)
@@ -148,7 +159,7 @@ export default function VerifyAccountForm() {
             <Button
               type="submit"
               className="w-full h-11 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white font-medium"
-              disabled={loading || verificationCode.length !== 6}
+              disabled={loading || verificationCode.length !== 6 || !apiAvailable}
             >
               {loading ? (
                 <>
@@ -165,7 +176,7 @@ export default function VerifyAccountForm() {
                 type="button"
                 variant="ghost"
                 onClick={handleResendCode}
-                disabled={resendLoading}
+                disabled={resendLoading || !apiAvailable}
                 className="text-purple-600 hover:text-purple-800"
               >
                 {resendLoading ? (
