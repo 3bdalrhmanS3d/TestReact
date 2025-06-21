@@ -1,5 +1,7 @@
-// تحديث عنوان API ليتطابق مع الخادم الفعلي
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:5268/api"
+// جرب كلا العنوانين - HTTP أولاً ثم HTTPS
+const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
+
+let CURRENT_API_BASE_URL = API_ENDPOINTS[0] // ابدأ بـ HTTP
 
 export interface ApiResponse<T = any> {
   success: boolean
@@ -18,14 +20,54 @@ class ApiClient {
     }
   }
 
-  async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    const url = `${API_BASE_URL}${endpoint}`
+  // جرب كل العناوين المتاحة
+  async findWorkingEndpoint(): Promise<string | null> {
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        console.log(`🔍 Testing endpoint: ${endpoint}`)
 
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 3000)
+
+        const response = await fetch(`${endpoint.replace("/api", "")}/health`, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+        })
+
+        clearTimeout(timeoutId)
+
+        if (response.ok) {
+          console.log(`✅ Found working endpoint: ${endpoint}`)
+          CURRENT_API_BASE_URL = endpoint
+          return endpoint
+        }
+      } catch (error) {
+        console.log(`❌ Endpoint failed: ${endpoint}`, error)
+      }
+    }
+
+    console.log("🚨 No working endpoint found")
+    return null
+  }
+
+  async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
+    // جرب العثور على endpoint يعمل أولاً
+    const workingEndpoint = await this.findWorkingEndpoint()
+
+    if (!workingEndpoint) {
+      return {
+        success: false,
+        message: `لا يمكن الوصول للخادم. جرب العناوين التالية يدوياً:\n${API_ENDPOINTS.join("\n")}`,
+      }
+    }
+
+    const url = `${workingEndpoint}${endpoint}`
     console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
 
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
 
       const response = await fetch(url, {
         ...options,
@@ -105,7 +147,7 @@ class ApiClient {
         if (error.message.includes("fetch")) {
           return {
             success: false,
-            message: `فشل في الاتصال بالخادم. تأكد من أن الخادم يعمل على: ${API_BASE_URL}`,
+            message: `فشل في الاتصال بالخادم. العناوين المجربة:\n${API_ENDPOINTS.join("\n")}`,
           }
         }
       }
@@ -119,60 +161,8 @@ class ApiClient {
 
   // Test connection method with better error handling
   async testConnection(): Promise<boolean> {
-    try {
-      console.log("🔍 Testing API connection...")
-
-      // Try health endpoint first
-      try {
-        const healthUrl = `${API_BASE_URL.replace("/api", "")}/health`
-        console.log("🏥 Testing health endpoint:", healthUrl)
-
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-        const response = await fetch(healthUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeoutId)
-
-        if (response.ok) {
-          console.log("✅ Health endpoint responded successfully")
-          return true
-        }
-      } catch (error) {
-        console.log("⚠️ Health endpoint failed:", error)
-      }
-
-      // Try base API endpoint
-      try {
-        console.log("🌐 Testing base API endpoint:", API_BASE_URL)
-
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-        const response = await fetch(API_BASE_URL, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-        })
-
-        clearTimeout(timeoutId)
-
-        // Even 404 means server is responding
-        console.log("📡 Base API response status:", response.status)
-        return true
-      } catch (error) {
-        console.log("❌ Base API endpoint failed:", error)
-      }
-
-      return false
-    } catch (error) {
-      console.error("🚨 Connection test failed:", error)
-      return false
-    }
+    const workingEndpoint = await this.findWorkingEndpoint()
+    return workingEndpoint !== null
   }
 
   // Auth endpoints with better error handling

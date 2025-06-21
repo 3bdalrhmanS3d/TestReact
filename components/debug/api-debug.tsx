@@ -23,7 +23,7 @@ export default function ApiDebug() {
   })
 
   useEffect(() => {
-    setApiUrl(process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api")
+    setApiUrl("http://localhost:5268/api")
     testConnection()
   }, [])
 
