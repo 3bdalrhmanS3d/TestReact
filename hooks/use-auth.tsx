@@ -1,36 +1,58 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import { apiClient } from "@/lib/api"
-
-interface User {
-  userId: number
-  fullName: string
-  emailAddress: string
-  role: string
-}
+import { authApi } from "@/lib/auth-api"
+import { profileApi } from "@/lib/profile-api"
+import type {
+  SignupRequestDto,
+  SigninRequestDto,
+  VerifyAccountRequestDto,
+  ForgetPasswordRequestDto,
+  ResetPasswordRequestDto,
+  AuthUser,
+  UserProfileDto,
+  UserProfileUpdateDto,
+  ProfileCompletionError,
+} from "@/types/auth"
 
 interface AuthContextType {
-  user: User | null
+  user: AuthUser | null
+  profile: UserProfileDto | null
   loading: boolean
   error: string | null
   apiAvailable: boolean
-  login: (email: string, password: string, rememberMe: boolean) => Promise<{ success: boolean; message?: string }>
-  logout: () => Promise<void>
-  signup: (fullName: string, email: string, password: string) => Promise<{ success: boolean; message?: string }>
-  verifyAccount: (code: string) => Promise<{ success: boolean; message?: string }>
+  profileIncomplete: boolean
+  profileCompletionData: ProfileCompletionError | null
+
+  // Auth methods
+  signup: (data: SignupRequestDto) => Promise<{ success: boolean; message?: string }>
+  signin: (data: SigninRequestDto) => Promise<{ success: boolean; message?: string }>
+  verifyAccount: (data: VerifyAccountRequestDto) => Promise<{ success: boolean; message?: string }>
   resendCode: () => Promise<{ success: boolean; message?: string }>
+  forgetPassword: (data: ForgetPasswordRequestDto) => Promise<{ success: boolean; message?: string }>
+  resetPassword: (data: ResetPasswordRequestDto) => Promise<{ success: boolean; message?: string }>
+  logout: () => Promise<void>
+
+  // Profile methods
+  updateProfile: (data: UserProfileUpdateDto) => Promise<{ success: boolean; message?: string }>
+  refreshProfile: () => Promise<void>
+
+  // Utility methods
   isAuthenticated: boolean
   clearError: () => void
+  refreshToken: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [profile, setProfile] = useState<UserProfileDto | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [apiAvailable, setApiAvailable] = useState(false)
+  const [profileIncomplete, setProfileIncomplete] = useState(false)
+  const [profileCompletionData, setProfileCompletionData] = useState<ProfileCompletionError | null>(null)
 
   const isAuthenticated = !!user
 
@@ -43,51 +65,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const checkAuth = async () => {
     try {
       console.log("🔍 Checking authentication status...")
-
-      // First check if we have stored user data
-      if (typeof window !== "undefined") {
-        const storedUser = localStorage.getItem("user")
-        const accessToken = localStorage.getItem("accessToken")
-
-        if (storedUser && accessToken) {
-          console.log("✅ Found stored user data")
-          setUser(JSON.parse(storedUser))
-          setApiAvailable(true)
-          setLoading(false)
-          return
-        }
-      }
+      setLoading(true)
 
       // Test API availability first
-      console.log("🌐 Testing API connection...")
-      const isApiAvailable = await apiClient.testConnection()
+      const isApiAvailable = await authApi.testConnection()
       setApiAvailable(isApiAvailable)
 
       if (!isApiAvailable) {
-        console.log("⚠️ API not available, skipping auto-login")
+        console.log("⚠️ API not available")
         setError("الخادم غير متاح حالياً")
         setLoading(false)
         return
       }
 
-      // Try auto-login from cookie if API is available
-      console.log("🔐 Attempting auto-login...")
-      const response = await apiClient.autoLoginFromCookie()
+      // Check for stored tokens
+      const accessToken = localStorage.getItem("accessToken")
+      const refreshToken = localStorage.getItem("refreshToken")
 
-      if (response.success && response.data) {
-        console.log("✅ Auto-login successful")
-        const userData = {
-          userId: response.data.userId,
-          fullName: response.data.fullName,
-          emailAddress: response.data.emailAddress,
-          role: response.data.role,
+      if (!accessToken) {
+        // Try auto-login from cookie
+        console.log("🔐 Attempting auto-login from cookie...")
+        const autoLoginResult = await authApi.autoLoginFromCookie()
+
+        if (autoLoginResult.success && autoLoginResult.data) {
+          console.log("✅ Auto-login successful")
+          const userData: AuthUser = {
+            id: autoLoginResult.data.userId,
+            userId: autoLoginResult.data.userId,
+            email: autoLoginResult.data.emailAddress,
+            emailAddress: autoLoginResult.data.emailAddress,
+            name: autoLoginResult.data.fullName,
+            fullName: autoLoginResult.data.fullName,
+            role: autoLoginResult.data.role,
+            profilePhoto: "/uploads/profile-pictures/default_user.webp",
+          }
+
+          setUser(userData)
+          localStorage.setItem("accessToken", autoLoginResult.data.token)
+          localStorage.setItem("refreshToken", autoLoginResult.data.refreshToken)
+
+          // Load profile after auto-login
+          await loadProfile()
+        } else {
+          console.log("ℹ️ No valid auto-login session found")
         }
-        setUser(userData)
-        localStorage.setItem("user", JSON.stringify(userData))
-        localStorage.setItem("accessToken", response.data.accessToken)
-        localStorage.setItem("refreshToken", response.data.refreshToken)
       } else {
-        console.log("ℹ️ No valid auto-login session found")
+        // Load profile with existing token
+        await loadProfile()
       }
     } catch (error) {
       console.error("🚨 Auth check failed:", error)
@@ -98,65 +122,92 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const login = async (email: string, password: string, rememberMe: boolean) => {
+  const loadProfile = async () => {
     try {
-      clearError()
+      console.log("📋 Loading user profile...")
+      const profileResult = await profileApi.getProfile()
 
-      if (!apiAvailable) {
-        return {
-          success: false,
-          message: "الخادم غير متاح حالياً. يرجى المحاولة لاحقاً.",
-        }
-      }
+      if (profileResult.success && profileResult.data) {
+        // Profile loaded successfully
+        console.log("✅ Profile loaded successfully")
+        setProfile(profileResult.data)
+        setProfileIncomplete(false)
+        setProfileCompletionData(null)
 
-      const response = await apiClient.signin({ email, password, rememberMe })
-
-      if (response.success && response.data) {
-        const userData = {
-          userId: response.data.userId,
-          fullName: response.data.fullName,
-          emailAddress: response.data.emailAddress,
-          role: response.data.role,
+        const userData: AuthUser = {
+          id: profileResult.data.id,
+          userId: profileResult.data.id,
+          email: profileResult.data.emailAddress,
+          emailAddress: profileResult.data.emailAddress,
+          name: profileResult.data.fullName,
+          fullName: profileResult.data.fullName,
+          role: profileResult.data.role,
+          profilePhoto: profileResult.data.profilePhoto,
         }
         setUser(userData)
-        setApiAvailable(true)
-        return { success: true }
-      }
+      } else if (profileResult.statusCode === 404) {
+        // User not found - redirect to signin
+        console.log("❌ User not found - clearing session")
+        await logout()
+      } else if (profileResult.statusCode === 400 && profileResult.errors) {
+        // Profile incomplete
+        console.log("⚠️ Profile incomplete")
+        setProfileIncomplete(true)
+        setProfileCompletionData(profileResult.errors as ProfileCompletionError)
 
-      return {
-        success: false,
-        message: response.message || "فشل في تسجيل الدخول",
+        // Set basic user data from token
+        const userData: AuthUser = {
+          id: 0, // Will be updated after profile completion
+          userId: 0,
+          email: "",
+          emailAddress: "",
+          name: "",
+          fullName: "",
+          role: "RegularUser",
+          profilePhoto: "/uploads/profile-pictures/default_user.webp",
+        }
+        setUser(userData)
+      } else {
+        // Other errors - try token refresh
+        const refreshResult = await refreshTokenInternal()
+        if (!refreshResult) {
+          // Clear invalid tokens
+          localStorage.removeItem("accessToken")
+          localStorage.removeItem("refreshToken")
+          setUser(null)
+          setProfile(null)
+        }
       }
     } catch (error) {
-      console.error("🚨 Login error:", error)
-      setApiAvailable(false)
-      return {
-        success: false,
-        message: "حدث خطأ أثناء تسجيل الدخول",
-      }
+      console.error("🚨 Profile loading failed:", error)
+      setError("فشل في تحميل الملف الشخصي")
     }
   }
 
-  const logout = async () => {
+  const refreshTokenInternal = async (): Promise<boolean> => {
     try {
-      if (apiAvailable) {
-        await apiClient.logout()
+      const refreshToken = localStorage.getItem("refreshToken")
+      if (!refreshToken) return false
+
+      const result = await authApi.refreshToken({ oldRefreshToken: refreshToken })
+
+      if (result.success && result.data) {
+        localStorage.setItem("accessToken", result.data.token)
+        localStorage.setItem("refreshToken", result.data.refreshToken)
+
+        // Reload profile after token refresh
+        await loadProfile()
+        return true
       }
+
+      return false
     } catch (error) {
-      console.error("Logout error:", error)
-    } finally {
-      setUser(null)
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("accessToken")
-        localStorage.removeItem("refreshToken")
-        localStorage.removeItem("user")
-      }
+      console.error("Token refresh failed:", error)
+      return false
     }
   }
 
-  const signup = async (fullName: string, emailAddress: string, password: string) => {
-    console.log("🔐 Auth: Starting signup process for:", emailAddress)
-
+  const signup = async (data: SignupRequestDto) => {
     try {
       clearError()
 
@@ -167,24 +218,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const response = await apiClient.signup({ fullName, emailAddress, password })
+      const result = await authApi.signup(data)
 
-      console.log("📡 Auth: Signup response:", {
-        success: response.success,
-        message: response.message,
-        errorCode: response.errorCode,
-      })
-
-      if (response.success) {
+      if (result.success) {
         setApiAvailable(true)
+        localStorage.setItem("pendingVerificationEmail", data.emailAddress)
       }
 
       return {
-        success: response.success,
-        message: response.message || (response.success ? "تم إرسال رمز التحقق" : "فشل في التسجيل"),
+        success: result.success,
+        message: result.message,
       }
     } catch (error) {
-      console.error("🚨 Auth: Signup error:", error)
+      console.error("🚨 Signup error:", error)
       setApiAvailable(false)
       return {
         success: false,
@@ -193,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const verifyAccount = async (verificationCode: string) => {
+  const signin = async (data: SigninRequestDto) => {
     try {
       clearError()
 
@@ -204,15 +250,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const response = await apiClient.verifyAccount({ verificationCode })
+      const result = await authApi.signin(data)
 
-      if (response.success) {
+      if (result.success && result.data) {
         setApiAvailable(true)
+
+        // Load profile after successful signin
+        await loadProfile()
+        return { success: true }
       }
 
       return {
-        success: response.success,
-        message: response.message || (response.success ? "تم تفعيل الحساب بنجاح" : "رمز التحقق غير صحيح"),
+        success: false,
+        message: result.message || "فشل في تسجيل الدخول",
+      }
+    } catch (error) {
+      console.error("🚨 Signin error:", error)
+      setApiAvailable(false)
+      return {
+        success: false,
+        message: "حدث خطأ أثناء تسجيل الدخول",
+      }
+    }
+  }
+
+  const verifyAccount = async (data: VerifyAccountRequestDto) => {
+    try {
+      clearError()
+
+      if (!apiAvailable) {
+        return {
+          success: false,
+          message: "الخادم غير متاح حالياً. يرجى المحاولة لاحقاً.",
+        }
+      }
+
+      const result = await authApi.verifyAccount(data)
+
+      if (result.success) {
+        setApiAvailable(true)
+        localStorage.removeItem("pendingVerificationEmail")
+      }
+
+      return {
+        success: result.success,
+        message: result.message,
       }
     } catch (error) {
       console.error("🚨 Verify account error:", error)
@@ -235,15 +317,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const response = await apiClient.resendVerificationCode()
+      const result = await authApi.resendVerificationCode()
 
-      if (response.success) {
+      if (result.success) {
         setApiAvailable(true)
       }
 
       return {
-        success: response.success,
-        message: response.message || (response.success ? "تم إرسال رمز جديد" : "فشل في إرسال الرمز"),
+        success: result.success,
+        message: result.message,
       }
     } catch (error) {
       console.error("🚨 Resend code error:", error)
@@ -255,20 +337,138 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const forgetPassword = async (data: ForgetPasswordRequestDto) => {
+    try {
+      clearError()
+
+      if (!apiAvailable) {
+        return {
+          success: false,
+          message: "الخادم غير متاح حالياً. يرجى المحاولة لاحقاً.",
+        }
+      }
+
+      const result = await authApi.forgetPassword(data)
+
+      return {
+        success: result.success,
+        message: result.message,
+      }
+    } catch (error) {
+      console.error("🚨 Forget password error:", error)
+      return {
+        success: false,
+        message: "حدث خطأ أثناء طلب إعادة تعيين كلمة المرور",
+      }
+    }
+  }
+
+  const resetPassword = async (data: ResetPasswordRequestDto) => {
+    try {
+      clearError()
+
+      if (!apiAvailable) {
+        return {
+          success: false,
+          message: "الخادم غير متاح حالياً. يرجى المحاولة لاحقاً.",
+        }
+      }
+
+      const result = await authApi.resetPassword(data)
+
+      return {
+        success: result.success,
+        message: result.message,
+      }
+    } catch (error) {
+      console.error("🚨 Reset password error:", error)
+      return {
+        success: false,
+        message: "حدث خطأ أثناء إعادة تعيين كلمة المرور",
+      }
+    }
+  }
+
+  const updateProfile = async (data: UserProfileUpdateDto) => {
+    try {
+      clearError()
+
+      if (!apiAvailable) {
+        return {
+          success: false,
+          message: "الخادم غير متاح حالياً. يرجى المحاولة لاحقاً.",
+        }
+      }
+
+      const result = await profileApi.updateProfile(data)
+
+      if (result.success) {
+        // Reload profile after successful update
+        await loadProfile()
+        return { success: true, message: result.message }
+      }
+
+      return {
+        success: false,
+        message: result.message || "فشل في تحديث الملف الشخصي",
+      }
+    } catch (error) {
+      console.error("🚨 Update profile error:", error)
+      return {
+        success: false,
+        message: "حدث خطأ أثناء تحديث الملف الشخصي",
+      }
+    }
+  }
+
+  const refreshProfile = async () => {
+    await loadProfile()
+  }
+
+  const logout = async () => {
+    try {
+      if (apiAvailable) {
+        await authApi.logout()
+      }
+    } catch (error) {
+      console.error("Logout error:", error)
+    } finally {
+      setUser(null)
+      setProfile(null)
+      setProfileIncomplete(false)
+      setProfileCompletionData(null)
+      localStorage.removeItem("accessToken")
+      localStorage.removeItem("refreshToken")
+      localStorage.removeItem("pendingVerificationEmail")
+    }
+  }
+
+  const refreshToken = async (): Promise<boolean> => {
+    return refreshTokenInternal()
+  }
+
   return (
     <AuthContext.Provider
       value={{
         user,
+        profile,
         loading,
         error,
         apiAvailable,
-        login,
-        logout,
+        profileIncomplete,
+        profileCompletionData,
         signup,
+        signin,
         verifyAccount,
         resendCode,
+        forgetPassword,
+        resetPassword,
+        updateProfile,
+        refreshProfile,
+        logout,
         isAuthenticated,
         clearError,
+        refreshToken,
       }}
     >
       {children}
