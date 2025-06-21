@@ -72,7 +72,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Try auto-login from cookie if API is available
       console.log("🔐 Attempting auto-login...")
-      const response = await apiClient.autoLoginFromCookie()
+      type AutoLoginResponseData = {
+        userId: number
+        fullName: string
+        emailAddress: string
+        role: string
+        accessToken: string
+        refreshToken: string
+      }
+
+      const response = await apiClient.autoLoginFromCookie() as {
+        success: boolean
+        data?: AutoLoginResponseData
+        message?: string
+      }
 
       if (response.success && response.data) {
         console.log("✅ Auto-login successful")

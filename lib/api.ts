@@ -1,7 +1,13 @@
-// جرب كلا العنوانين - HTTP أولاً ثم HTTPS
-const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
+// lib/api.ts
 
-let CURRENT_API_BASE_URL = API_ENDPOINTS[0] // ابدأ بـ HTTP
+// جرب كلا العنوانين - HTTP أولاً ثم HTTPS
+const API_ENDPOINTS = [
+  "http://localhost:5268/api",
+  "https://localhost:7217/api"
+]
+
+// نخزّن هنا العنوان الذي نجح
+let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
 
 export interface ApiResponse<T = any> {
   success: boolean
@@ -13,63 +19,62 @@ export interface ApiResponse<T = any> {
 
 class ApiClient {
   private getAuthHeaders(): HeadersInit {
-    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+    const token = typeof window !== "undefined"
+      ? localStorage.getItem("accessToken")
+      : null
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
     }
   }
 
-  // جرب كل العناوين المتاحة
-  async findWorkingEndpoint(): Promise<string | null> {
+  // يجرب كل endpoint محفوظ
+  private async findWorkingEndpoint(): Promise<string | null> {
     for (const endpoint of API_ENDPOINTS) {
       try {
         console.log(`🔍 Testing endpoint: ${endpoint}`)
-
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-        const response = await fetch(`${endpoint.replace("/api", "")}/health`, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-        })
-
+        const res = await fetch(
+          `${endpoint.replace("/api", "")}/health`,
+          { signal: controller.signal }
+        )
         clearTimeout(timeoutId)
-
-        if (response.ok) {
+        if (res.ok) {
           console.log(`✅ Found working endpoint: ${endpoint}`)
           CURRENT_API_BASE_URL = endpoint
           return endpoint
         }
-      } catch (error) {
-        console.log(`❌ Endpoint failed: ${endpoint}`, error)
+      } catch (err) {
+        console.log(`❌ Endpoint failed: ${endpoint}`, err)
       }
     }
-
     console.log("🚨 No working endpoint found")
     return null
   }
 
-  async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    // جرب العثور على endpoint يعمل أولاً
-    const workingEndpoint = await this.findWorkingEndpoint()
-
-    if (!workingEndpoint) {
+  // الدالة الرئيسية لإرسال الطلبات
+  private async request<T>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    // تأكد من endpoint صالح
+    const base = await this.findWorkingEndpoint()
+    if (!base) {
       return {
         success: false,
-        message: `لا يمكن الوصول للخادم. جرب العناوين التالية يدوياً:\n${API_ENDPOINTS.join("\n")}`,
+        message: `لا يمكن الوصول للخادم. جرّب العناوين:\n${API_ENDPOINTS.join("\n")}`,
       }
     }
 
-    const url = `${workingEndpoint}${endpoint}`
+    const url = `${base}${endpoint}`
     console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
 
     try {
       const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000) // 15 second timeout
+      const timeoutId = setTimeout(() => controller.abort(), 15000)
 
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         ...options,
         headers: {
           ...this.getAuthHeaders(),
@@ -78,80 +83,54 @@ class ApiClient {
         credentials: "include",
         signal: controller.signal,
       })
-
       clearTimeout(timeoutId)
 
-      console.log(`📡 Response Status: ${response.status} ${response.statusText}`)
+      console.log(`📡 Response Status: ${res.status} ${res.statusText}`)
 
       let data: any
-      const contentType = response.headers.get("content-type")
-
-      if (contentType && contentType.includes("application/json")) {
-        data = await response.json()
-        console.log(`📥 Response Data:`, data)
+      const ct = res.headers.get("content-type") || ""
+      if (ct.includes("application/json")) {
+        data = await res.json()
+        console.log("📥 Response Data:", data)
       } else {
-        const text = await response.text()
-        console.log(`📄 Response Text:`, text)
-        data = { message: text || "استجابة غير متوقعة من الخادم" }
+        const txt = await res.text()
+        console.log("📄 Response Text:", txt)
+        data = { message: txt || res.statusText }
       }
 
-      if (!response.ok) {
-        console.error(`❌ API Error:`, data)
-
-        let errorMessage = "حدث خطأ غير متوقع"
-
-        if (data.message) {
-          errorMessage = data.message
-        } else if (data.Message) {
-          errorMessage = data.Message
-        } else if (response.status === 400) {
-          errorMessage = "بيانات غير صحيحة"
-        } else if (response.status === 401) {
-          errorMessage = "غير مصرح لك بالوصول"
-        } else if (response.status === 403) {
-          errorMessage = "ممنوع الوصول"
-        } else if (response.status === 404) {
-          errorMessage = "المورد غير موجود"
-        } else if (response.status === 500) {
-          errorMessage = "خطأ في الخادم"
-        } else if (response.status >= 500) {
-          errorMessage = "خطأ في الخادم"
-        }
-
+      if (!res.ok) {
+        console.warn("❌ API Warning:", data)
+        const msg =
+          data.message ??
+          data.Message ??
+          res.statusText ??
+          `خطأ في الخادم (${res.status})`
         return {
           success: false,
-          message: errorMessage,
+          message: msg,
           errorCode: data.errorCode || data.ErrorCode,
           errors: data.errors || data.Errors,
         }
       }
 
-      console.log(`✅ API Success:`, data)
-
       return {
         success: true,
-        data: data.data || data.Data || data,
-        message: data.message || data.Message,
+        data: data.data ?? data.Data ?? data,
+        message: data.message ?? data.Message,
       }
-    } catch (error) {
-      console.error("🚨 Network Error:", error)
-
-      if (error instanceof Error) {
-        if (error.name === "AbortError") {
-          return {
-            success: false,
-            message: "انتهت مهلة الاتصال. يرجى المحاولة مرة أخرى.",
-          }
-        }
-
-        if (error.message.includes("fetch")) {
-          return {
-            success: false,
-            message: `فشل في الاتصال بالخادم. العناوين المجربة:\n${API_ENDPOINTS.join("\n")}`,
-          }
+    } catch (err: any) {
+      console.warn("🚨 Network Warning:", err)
+      if (err.name === "AbortError") {
+        return { success: false, message: "انتهت مهلة الاتصال. حاول مجددًا." }
+      }
+      if (err.message.includes("fetch")) {
+        return {
+          success: false,
+          message: `فشل في الاتصال بالخادم. العناوين المفحوصة:\n${API_ENDPOINTS.join(
+            "\n"
+          )}`,
         }
       }
-
       return {
         success: false,
         message: "حدث خطأ في الشبكة. تحقق من اتصالك بالإنترنت.",
@@ -159,19 +138,13 @@ class ApiClient {
     }
   }
 
-  // Test connection method with better error handling
-  async testConnection(): Promise<boolean> {
-    const workingEndpoint = await this.findWorkingEndpoint()
-    return workingEndpoint !== null
-  }
-
-  // Auth endpoints with better error handling
+  // ==== Auth Endpoints ====
   async signup(data: {
     fullName: string
     emailAddress: string
     password: string
   }) {
-    console.log("🔐 Attempting signup for:", data.emailAddress)
+    console.log("🔐 Signup for:", data.emailAddress)
     return this.request("/Auth/signup", {
       method: "POST",
       body: JSON.stringify(data),
@@ -192,77 +165,96 @@ class ApiClient {
   }
 
   async signin(data: {
-  email: string
-  password: string
-  rememberMe: boolean
-}) {
-  const response = await this.request<{
-    accessToken: string
-    refreshToken: string
-    userId: number
-    fullName: string
-    emailAddress: string
-    role: string
-    autoLoginToken?: string
-  }>("/Auth/signin", {
-    method: "POST",
-    body: JSON.stringify({
-      email:      data.email,
-      password:   data.password,
-      rememberMe: data.rememberMe,
-    }),
-  })
-
-  if (response.success && response.data && typeof window !== "undefined") {
-    localStorage.setItem("accessToken", response.data.accessToken)
-    localStorage.setItem("refreshToken", response.data.refreshToken)
-    localStorage.setItem(
-      "user",
-      JSON.stringify({
-        userId:       response.data.userId,
-        fullName:     response.data.fullName,
-        emailAddress: response.data.emailAddress,
-        role:         response.data.role,
+    email: string
+    password: string
+    rememberMe: boolean
+  }) {
+    const response = await this.request<{
+      accessToken: string
+      refreshToken: string
+      userId: number
+      fullName: string
+      emailAddress: string
+      role: string
+    }>("/Auth/signin", {
+      method: "POST",
+      body: JSON.stringify({
+        email:      data.email,
+        password:   data.password,
+        rememberMe: data.rememberMe,
       }),
-    )
+    })
+
+    if (response.success && response.data && typeof window !== "undefined") {
+      localStorage.setItem("accessToken", response.data.accessToken)
+      localStorage.setItem("refreshToken", response.data.refreshToken)
+      localStorage.setItem(
+        "user",
+        JSON.stringify({
+          userId:       response.data.userId,
+          fullName:     response.data.fullName,
+          emailAddress: response.data.emailAddress,
+          role:         response.data.role,
+        })
+      )
+    }
+
+    return response
   }
 
-  return response
-}
+  // ==== Dashboard Endpoints ====
+  async getUserStats() {
+    return this.request<{
+      sharedCourses: number
+      completedSections: number
+      progress: Array<{
+        courseId: number
+        progressPercentage: number
+      }>
+    }>("/User/stats", { method: "GET" })
+  }
 
+  async searchCourses(search?: string) {
+    const params = search ? `?search=${encodeURIComponent(search)}` : ""
+    return this.request<
+      Array<{
+        courseId: number
+        courseName: string
+        description: string
+        courseImage: string
+        coursePrice: number
+      }>
+    >(`/User/search-courses${params}`, { method: "GET" })
+  }
 
+  // ==== Token Management ====
   async refreshToken() {
     if (typeof window === "undefined") {
       throw new Error("No refresh token available")
     }
-
-    const refreshToken = localStorage.getItem("refreshToken")
-    if (!refreshToken) {
-      throw new Error("No refresh token available")
-    }
+    const token = localStorage.getItem("refreshToken")
+    if (!token) throw new Error("No refresh token available")
 
     const response = await this.request<{
       accessToken: string
       refreshToken: string
     }>("/Auth/refresh-token", {
       method: "POST",
-      body: JSON.stringify({ refreshToken }),
+      body: JSON.stringify({ refreshToken: token }),
     })
 
     if (response.success && response.data) {
       localStorage.setItem("accessToken", response.data.accessToken)
       localStorage.setItem("refreshToken", response.data.refreshToken)
     }
-
     return response
   }
 
   async autoLoginFromCookie() {
-    return this.request("/Auth/auto-login-from-cookie", {
-      method: "POST",
-    })
+    return this.request("/Auth/auto-login-from-cookie", { method: "POST" })
   }
 
+  // ==== Password Endpoints ====
   async forgetPassword(data: { email: string }) {
     return this.request("/Auth/forget-password", {
       method: "POST",
@@ -281,17 +273,12 @@ class ApiClient {
   }
 
   async logout() {
-    const response = await this.request("/Auth/logout", {
-      method: "POST",
-    })
-
-    // Clear local storage regardless of response
+    const response = await this.request("/Auth/logout", { method: "POST" })
     if (typeof window !== "undefined") {
       localStorage.removeItem("accessToken")
       localStorage.removeItem("refreshToken")
       localStorage.removeItem("user")
     }
-
     return response
   }
 }

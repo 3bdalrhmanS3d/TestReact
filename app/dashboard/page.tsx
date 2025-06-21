@@ -40,11 +40,11 @@ export default function DashboardPage() {
       const [statsResponse, coursesResponse] = await Promise.all([apiClient.getUserStats(), apiClient.searchCourses()])
 
       if (statsResponse.success) {
-        setStats(statsResponse.data)
+        setStats(statsResponse.data ?? null)
       }
 
       if (coursesResponse.success) {
-        setRecentCourses(coursesResponse.data.slice(0, 3))
+        setRecentCourses(coursesResponse.data?.slice(0, 3) || [])
       }
     } catch (error) {
       console.error("Error loading dashboard data:", error)
