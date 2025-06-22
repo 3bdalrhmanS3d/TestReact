@@ -157,7 +157,7 @@ export default function CompleteProfileModal() {
 
   return (
     <Dialog open={profileIncomplete} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-md" hideCloseButton>
+      <DialogContent className="sm:max-w-md [&>button]:hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-right">
             <User className="h-5 w-5" />
