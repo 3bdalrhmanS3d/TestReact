@@ -96,16 +96,20 @@ export interface UserProgressDto {
 }
 
 export interface UserProfileDto {
-  id: number
-  fullName: string
-  emailAddress: string
-  role: string
-  profilePhoto: string
-  createdAt: string
-  birthDate?: string
-  edu?: string
-  national?: string
-  progress: UserProgressDto[]
+  id: number;
+  fullName: string;
+  emailAddress: string;
+  role: string;
+  profilePhoto: string;
+  createdAt: string;
+  // Indicates if the user has completed their personal details
+  isProfileComplete: boolean;
+  // Fields required to complete the profile if incomplete (fieldName: description)
+  requiredFields?: Record<string, string>;
+  birthDate?: string;
+  edu?: string;
+  national?: string;
+  progress: UserProgressDto[];
 }
 
 export interface UserProfileUpdateDto {

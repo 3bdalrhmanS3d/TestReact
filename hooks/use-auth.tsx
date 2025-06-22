@@ -27,11 +27,7 @@ export interface UserProgressDto {
 }
 
 export interface ProfileCompletionError {
-  requiredFields: {
-    BirthDate?: string
-    Education?: string
-    Nationality?: string
-  }
+  requiredFields: Record<string, string>
   profileCompletionUrl: string
 }
 
@@ -61,6 +57,8 @@ interface AuthContextType {
     national: string
   }) => Promise<{ success: boolean; message?: string }>
   clearError: () => void
+  isProfileComplete: boolean
+  requiredFields: Record<string, string> | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -73,6 +71,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profileCompletionData, setProfileCompletionData] = useState<ProfileCompletionError | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [apiAvailable, setApiAvailable] = useState(true)
+  const [isProfileComplete, setIsProfileComplete] = useState<boolean>(false)
+  const [requiredFields, setRequiredFields] = useState<Record<string, string> | null>(null)
   const router = useRouter()
 
   const clearError = () => setError(null)
@@ -96,6 +96,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("❌ No access token found")
         setProfileIncomplete(false)
         setProfileCompletionData(null)
+        setIsProfileComplete(false)
+        setRequiredFields(null)
         return
       }
 
@@ -103,40 +105,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.log("📋 Profile API Response:", response)
 
       if (response.success && response.data) {
+        const data = response.data
         console.log("✅ Profile loaded successfully")
-        setProfile(response.data)
-        setUser(response.data) // Set user data from profile
-        setProfileIncomplete(false)
-        setProfileCompletionData(null)
+        setProfile(data)
+        setUser(data)
+        setIsProfileComplete(data.isProfileComplete)
+        setRequiredFields(data.requiredFields || null)
+        if (!data.isProfileComplete) {
+          setProfileIncomplete(true)
+          setProfileCompletionData({
+            requiredFields: data.requiredFields || {},
+            profileCompletionUrl: "/api/profile/update"
+          })
+        } else {
+          setProfileIncomplete(false)
+          setProfileCompletionData(null)
+        }
         setError(null)
       } else if (response.statusCode === 404) {
         console.log("❌ User not found - logging out")
         await logout()
         return
-      } else if (response.statusCode === 400 && response.errors) {
-        console.log("⚠️ Profile incomplete:", response.errors)
-        setProfileIncomplete(true)
-        setProfileCompletionData(response.errors as ProfileCompletionError)
-        setError(null)
-        // Set minimal user data for incomplete profile
-        setUser({
-          id: 0,
-          fullName: "",
-          emailAddress: "",
-          role: "RegularUser",
-          createdAt: new Date().toISOString(),
-        })
       } else {
         console.log("❌ Profile loading failed:", response.message)
         setError(response.message || "فشل في تحميل الملف الشخصي")
         setProfileIncomplete(false)
         setProfileCompletionData(null)
+        setIsProfileComplete(false)
+        setRequiredFields(null)
       }
     } catch (err: any) {
       console.error("🚨 Profile loading error:", err)
       setError("حدث خطأ أثناء تحميل الملف الشخصي")
       setProfileIncomplete(false)
       setProfileCompletionData(null)
+      setIsProfileComplete(false)
+      setRequiredFields(null)
     }
   }
 
@@ -148,7 +152,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.success) {
         console.log("✅ Profile updated successfully")
-        // Reload profile after successful update
         await loadProfile()
         return { success: true, message: response.message || "تم تحديث الملف الشخصي بنجاح" }
       }
@@ -167,12 +170,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setError(null)
 
-      const response = await authApi.signin({
-        email,
-        password,
-        rememberMe,
-      })
-
+      const response = await authApi.signin({ email, password, rememberMe })
       console.log("🔑 Signin response:", response)
 
       if (response.success && response.data) {
@@ -181,8 +179,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (response.data.refreshToken) {
           localStorage.setItem("refreshToken", response.data.refreshToken)
         }
-
-        // Load profile after successful signin
         await loadProfile()
         return { success: true }
       }
@@ -244,6 +240,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileIncomplete(false)
       setProfileCompletionData(null)
       setError(null)
+      setIsProfileComplete(false)
+      setRequiredFields(null)
       router.push("/auth/signin")
     }
   }
@@ -254,7 +252,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!refreshTokenValue) return false
 
       const response = await authApi.refreshToken({ oldRefreshToken: refreshTokenValue })
-
       if (response.success && response.data) {
         localStorage.setItem("accessToken", response.data.token)
         if (response.data.refreshToken) {
@@ -276,7 +273,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log("🚀 Initializing authentication...")
         setLoading(true)
 
-        // Check API health
         const isApiHealthy = await checkApiHealth()
         if (!isApiHealthy) {
           console.log("❌ API not healthy")
@@ -290,7 +286,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // Try to refresh token first
         const refreshed = await refreshToken()
         if (!refreshed) {
           console.log("❌ Token refresh failed, clearing tokens")
@@ -299,7 +294,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // Load profile
         await loadProfile()
       } catch (err) {
         console.error("🚨 Auth initialization error:", err)
@@ -328,6 +322,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadProfile,
     updateProfile,
     clearError,
+    isProfileComplete,
+    requiredFields
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
