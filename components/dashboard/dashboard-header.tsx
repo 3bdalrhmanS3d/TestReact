@@ -28,7 +28,7 @@ export default function DashboardHeader() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">لوحة التحكم</h1>
-          <p className="text-gray-600">مرحباً بك، {user?.fullName || user?.name}</p>
+          <p className="text-gray-600">مرحباً بك، {user?.fullName || user?.fullName}</p>
         </div>
 
         <div className="flex items-center space-x-4 space-x-reverse">
@@ -52,10 +52,10 @@ export default function DashboardHeader() {
                 <Avatar className="h-10 w-10">
                   <AvatarImage
                     src={user?.profilePhoto || "/placeholder.svg?height=40&width=40"}
-                    alt={user?.fullName || user?.name}
+                    alt={user?.fullName || user?.fullName}
                   />
                   <AvatarFallback>
-                    {(user?.fullName || user?.name || "")
+                    {(user?.fullName || user?.fullName || "")
                       .split(" ")
                       .map((n) => n[0])
                       .join("")
@@ -67,8 +67,8 @@ export default function DashboardHeader() {
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">{user?.fullName || user?.name}</p>
-                  <p className="text-xs leading-none text-muted-foreground">{user?.emailAddress || user?.email}</p>
+                  <p className="text-sm font-medium leading-none">{user?.fullName}</p>
+                  <p className="text-xs leading-none text-muted-foreground">{user?.emailAddress}</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

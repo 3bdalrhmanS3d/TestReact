@@ -10,7 +10,7 @@ import { Loader2, BookOpen, Users, Award, ArrowRight, Wifi, WifiOff } from "luci
 import Link from "next/link"
 
 export default function HomePage() {
-  const { isAuthenticated, loading, error, apiAvailable, clearError } = useAuth()
+  const { isAuthenticated, loading, error, apiAvailable } = useAuth()
   const router = useRouter()
   const [showLanding, setShowLanding] = useState(false)
 
@@ -95,9 +95,6 @@ export default function HomePage() {
             <Alert variant="destructive" className="mb-6">
               <AlertDescription className="flex items-center justify-between">
                 <span>{error}</span>
-                <Button variant="ghost" size="sm" onClick={clearError}>
-                  إخفاء
-                </Button>
               </AlertDescription>
             </Alert>
           )}

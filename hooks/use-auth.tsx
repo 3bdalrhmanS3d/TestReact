@@ -181,7 +181,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(true)
       setError(null)
 
-      const response = await apiClient.post("/auth/signup", data)
+      const response = await apiClient.pos("/auth/signup", data)
 
       if (response.success) {
         return { success: true, message: "تم إنشاء الحساب بنجاح. يرجى التحقق من بريدك الإلكتروني." }

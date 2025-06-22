@@ -24,7 +24,7 @@ export default function DashboardSidebar() {
       <SidebarHeader>
         <div className="p-4">
           <h2 className="text-lg font-bold text-gray-900">لوحة التحكم</h2>
-          <p className="text-sm text-gray-600">مرحباً، {user?.fullName || user?.name}</p>
+          <p className="text-sm text-gray-600">مرحباً، {user?.fullName}</p>
         </div>
       </SidebarHeader>
 
