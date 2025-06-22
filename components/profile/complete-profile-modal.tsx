@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, User, Calendar, GraduationCap, Globe } from "lucide-react"
+import { Loader2, User, Calendar, GraduationCap, Globe, CheckCircle } from "lucide-react"
 import { toast } from "sonner"
 
 function CompleteProfileForm() {
@@ -23,9 +23,17 @@ function CompleteProfileForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate form data
+    if (!formData.birthDate || !formData.edu || !formData.national) {
+      toast.error("يرجى ملء جميع الحقول المطلوبة")
+      return
+    }
+
     setLoading(true)
 
     try {
+      console.log("📝 Submitting profile completion form:", formData)
       const result = await updateProfile(formData)
 
       if (result.success) {
@@ -49,14 +57,16 @@ function CompleteProfileForm() {
     return null
   }
 
+  const requiredFields = profileCompletionData.requiredFields || {}
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       {/* Birth Date */}
-      {profileCompletionData.requiredFields?.BirthDate && (
+      {requiredFields.BirthDate && (
         <div className="space-y-2">
           <Label htmlFor="birthDate" className="flex items-center gap-2 text-right">
             <Calendar className="h-4 w-4" />
-            تاريخ الميلاد
+            تاريخ الميلاد *
           </Label>
           <Input
             id="birthDate"
@@ -67,16 +77,16 @@ function CompleteProfileForm() {
             max={new Date(Date.now() - 13 * 365 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]}
             className="text-right"
           />
-          <p className="text-xs text-muted-foreground text-right">{profileCompletionData.requiredFields.BirthDate}</p>
+          <p className="text-xs text-muted-foreground text-right">{requiredFields.BirthDate}</p>
         </div>
       )}
 
       {/* Education Level */}
-      {profileCompletionData.requiredFields?.Education && (
+      {requiredFields.Education && (
         <div className="space-y-2">
           <Label htmlFor="edu" className="flex items-center gap-2 text-right">
             <GraduationCap className="h-4 w-4" />
-            المستوى التعليمي
+            المستوى التعليمي *
           </Label>
           <Select value={formData.edu} onValueChange={(value) => handleInputChange("edu", value)} required>
             <SelectTrigger className="text-right">
@@ -93,16 +103,16 @@ function CompleteProfileForm() {
               <SelectItem value="أخرى">أخرى</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground text-right">{profileCompletionData.requiredFields.Education}</p>
+          <p className="text-xs text-muted-foreground text-right">{requiredFields.Education}</p>
         </div>
       )}
 
       {/* Nationality */}
-      {profileCompletionData.requiredFields?.Nationality && (
+      {requiredFields.Nationality && (
         <div className="space-y-2">
           <Label htmlFor="national" className="flex items-center gap-2 text-right">
             <Globe className="h-4 w-4" />
-            الجنسية
+            الجنسية *
           </Label>
           <Select value={formData.national} onValueChange={(value) => handleInputChange("national", value)} required>
             <SelectTrigger className="text-right">
@@ -130,7 +140,7 @@ function CompleteProfileForm() {
               <SelectItem value="أخرى">أخرى</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground text-right">{profileCompletionData.requiredFields.Nationality}</p>
+          <p className="text-xs text-muted-foreground text-right">{requiredFields.Nationality}</p>
         </div>
       )}
 
@@ -141,7 +151,10 @@ function CompleteProfileForm() {
             جاري الحفظ...
           </>
         ) : (
-          "إكمال الملف الشخصي"
+          <>
+            <CheckCircle className="mr-2 h-4 w-4" />
+            إكمال الملف الشخصي
+          </>
         )}
       </Button>
     </form>
