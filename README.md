@@ -76,52 +76,52 @@
 
 ### متطلبات النظام
 
-```bash
+\`\`\`bash
 Node.js >= 18.17.0
 npm >= 9.0.0
-```
+\`\`\`
 
 ### 1. تحميل المشروع
 
-```bash
+\`\`\`bash
 git clone https://github.com/learnquest/frontend.git
 cd learnquest-frontend
-```
+\`\`\`
 
 ### 2. تثبيت التبعيات
 
-```bash
+\`\`\`bash
 npm install
-```
+\`\`\`
 
 ### 3. إعداد البيئة
 
-```bash
+\`\`\`bash
 # نسخ ملف البيئة الافتراضي
 cp .env.example .env.local
 
 # تحرير الملف وإضافة القيم المطلوبة
 nano .env.local
-```
+\`\`\`
 
 ### 4. إعداد متغيرات البيئة الأساسية
 
-```env
+\`\`\`env
 # في ملف .env.local
 NEXT_PUBLIC_API_URL=https://learnquest.runasp.net/api
 NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
+\`\`\`
 
 ### 5. تشغيل المشروع
 
-```bash
+\`\`\`bash
 # تشغيل في وضع التطوير
 npm run dev
 
 # بناء المشروع للإنتاج
 npm run build
 npm run start
-```
+\`\`\`
 
 ### 6. فتح المشروع
 
@@ -133,7 +133,7 @@ npm run start
 
 المشروع يدعم عدة خوادم API مع آلية fallback تلقائية:
 
-```typescript
+\`\`\`typescript
 // ترتيب الأولوية للخوادم
 const API_ENDPOINTS = [
   process.env.NEXT_PUBLIC_API_URL,           // الخادم الرئيسي
@@ -141,7 +141,7 @@ const API_ENDPOINTS = [
   "http://localhost:5268/api",               // خادم التطوير المحلي
   "https://localhost:7217/api",              // خادم HTTPS المحلي
 ]
-```
+\`\`\`
 
 ### تكوين الـ API
 
@@ -167,7 +167,7 @@ const API_ENDPOINTS = [
 
 ### استخدام الـ Hooks
 
-```typescript
+\`\`\`typescript
 // استخدام hook المصادقة
 import { useAuth } from '@/hooks/use-auth'
 
@@ -185,11 +185,11 @@ function CoursesComponent() {
   
   // باقي الكود...
 }
-```
+\`\`\`
 
 ## 📁 هيكل المشروع
 
-```File
+\`\`\`File
 
    src/
    ├── app/                    # Next.js App Router
@@ -218,13 +218,13 @@ function CoursesComponent() {
    └── styles/              # CSS وملفات التصميم
       └── globals.css      # CSS العام
 
-```
+\`\`\`
 
 ## 🔧 إعدادات التطوير
 
 ### Scripts المتاحة
 
-```bash
+\`\`\`bash
 # التطوير
 npm run dev              # تشغيل في وضع التطوير
 npm run build           # بناء للإنتاج
@@ -240,11 +240,11 @@ npm run test:coverage   # تشغيل مع تقرير التغطية
 # التنسيق
 npm run format          # تنسيق الكود
 npm run format:check    # فحص التنسيق
-```
+\`\`\`
 
 ### متغيرات البيئة المطلوبة
 
-```env
+\`\`\`env
 # أساسية
 NEXT_PUBLIC_API_URL=https://learnquest.runasp.net/api
 NEXT_PUBLIC_APP_URL=http://localhost:3000
@@ -252,11 +252,11 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 # اختيارية
 NEXT_PUBLIC_GA_ID=G-XXXXXXXXXX
 NEXT_PUBLIC_SENTRY_DSN=https://your-sentry-dsn
-```
+\`\`\`
 
 ## 🧪 الاختبار
 
-```bash
+\`\`\`bash
 # تشغيل جميع الاختبارات
 npm run test
 
@@ -265,36 +265,36 @@ npm run test:watch
 
 # تقرير التغطية
 npm run test:coverage
-```
+\`\`\`
 
 ## 📦 البناء والنشر
 
 ### بناء محلي
 
-```bash
+\`\`\`bash
 npm run build
 npm run start
-```
+\`\`\`
 
 ### النشر على Vercel
 
-```bash
+\`\`\`bash
 # تثبيت Vercel CLI
 npm i -g vercel
 
 # النشر
 vercel --prod
-```
+\`\`\`
 
 ### النشر باستخدام Docker
 
-```bash
+\`\`\`bash
 # بناء Docker image
 docker build -t learnquest-frontend .
 
 # تشغيل Container
 docker run -p 3000:3000 learnquest-frontend
-```
+\`\`\`
 
 ## 🔍 استكشاف الأخطاء
 
@@ -302,34 +302,34 @@ docker run -p 3000:3000 learnquest-frontend
 
 1. **خطأ في الاتصال بالـ API**
 
-   ```bash
+   \`\`\`bash
    # تأكد من تشغيل الباك إند
    # تحقق من متغير NEXT_PUBLIC_API_URL
-   ```
+   \`\`\`
 
 2. **مشاكل في المصادقة**
 
-   ```bash
+   \`\`\`bash
    # امسح localStorage
    localStorage.clear()
    # أعد تحميل الصفحة
-   ```
+   \`\`\`
 
 3. **مشاكل في التثبيت**
 
-   ```bash
+   \`\`\`bash
    # امسح node_modules و package-lock.json
    rm -rf node_modules package-lock.json
    npm install
-   ```
+   \`\`\`
 
 ### تفعيل وضع Debug
 
-```env
+\`\`\`env
 # في .env.local
 NEXT_PUBLIC_DEBUG_MODE=true
 NEXT_PUBLIC_SHOW_API_LOGS=true
-```
+\`\`\`
 
 ## 🤝 المساهمة
 
@@ -362,10 +362,10 @@ NEXT_PUBLIC_SHOW_API_LOGS=true
 
 للحصول على آخر التحديثات:
 
-```bash
+\`\`\`bash
 git pull origin main
 npm install
 npm run dev
-```
+\`\`\`
 
 ---

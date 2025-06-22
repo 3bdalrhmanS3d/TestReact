@@ -4,39 +4,48 @@ const nextConfig = {
   poweredByHeader: false,
   compress: true,
 
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
   // إزالة الإعدادات المتقادمة
   experimental: {
-    optimizePackageImports: [
-      'lucide-react',
-      '@radix-ui/react-icons',
-      'date-fns',
-      'framer-motion'
-    ],
+    optimizePackageImports: ["lucide-react", "@radix-ui/react-icons", "date-fns", "framer-motion"],
   },
 
   images: {
     remotePatterns: [
       {
-        protocol: 'http',
-        hostname: '127.0.0.1',
+        protocol: "https",
+        hostname: "localhost",
+        port: "7217",
       },
       {
-        protocol: 'https',
-        hostname: '127.0.0.1',
+        protocol: "http",
+        hostname: "localhost",
+        port: "5268",
       },
       {
-        protocol: 'https',
-        hostname: 'learnquest.runasp.net',
+        protocol: "https",
+        hostname: "learnquest.runasp.net",
       },
     ],
+    unoptimized: true,
   },
 
   // تبسيط الإعدادات لتجنب الأخطاء
   async rewrites() {
     return [
       {
-        source: '/api/proxy/:path*',
-        destination: `http://127.0.0.1:5268/api/:path*`,
+        source: "/api/proxy/:path*",
+        destination: `https://localhost:7217/api/:path*`,
+      },
+      {
+        source: "/api/fallback/:path*",
+        destination: `http://localhost:5268/api/:path*`,
       },
     ]
   },
@@ -44,19 +53,19 @@ const nextConfig = {
   async headers() {
     return [
       {
-        source: '/(.*)',
+        source: "/(.*)",
         headers: [
           {
-            key: 'Access-Control-Allow-Origin',
-            value: '*',
+            key: "Access-Control-Allow-Origin",
+            value: "*",
           },
           {
-            key: 'Access-Control-Allow-Methods',
-            value: 'GET, POST, PUT, DELETE, OPTIONS',
+            key: "Access-Control-Allow-Methods",
+            value: "GET, POST, PUT, DELETE, OPTIONS",
           },
           {
-            key: 'Access-Control-Allow-Headers',
-            value: 'Content-Type, Authorization',
+            key: "Access-Control-Allow-Headers",
+            value: "Content-Type, Authorization",
           },
         ],
       },

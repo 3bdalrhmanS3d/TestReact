@@ -5,7 +5,6 @@ import type {
   ForgetPasswordRequestDto,
   ResetPasswordRequestDto,
   RefreshTokenRequestDto,
-  AutoLoginRequestDto,
   SigninResponseDto,
   RefreshTokenResponseDto,
   AutoLoginResponseDto,
@@ -14,11 +13,10 @@ import type {
 
 // API Endpoints with environment-based configuration
 const API_ENDPOINTS = [
+  "https://localhost:7217/api", // Primary HTTPS endpoint
+  "http://localhost:5268/api", // Secondary HTTP endpoint
   process.env.NEXT_PUBLIC_API_URL,
-  "http://localhost:5268/api",
-  "https://localhost:7217/api", // الـ port الصحيح
 ].filter(Boolean) as string[]
-
 
 class AuthApiClient {
   private baseUrl: string | null = null
@@ -32,14 +30,15 @@ class AuthApiClient {
 
     for (const endpoint of API_ENDPOINTS) {
       try {
-        const testUrl = `${endpoint}/Auth/health-check`
-        const response = await fetch(testUrl, {
+        // Try the health endpoint that your backend provides
+        const healthUrl = `${endpoint.replace("/api", "")}/health`
+        const response = await fetch(healthUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(5000),
         })
 
-        if (response.ok || response.status === 404) {
+        if (response.ok) {
           console.log(`✅ API endpoint found: ${endpoint}`)
           this.baseUrl = endpoint
           return endpoint
@@ -53,10 +52,7 @@ class AuthApiClient {
     return null
   }
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const baseUrl = await this.findWorkingEndpoint()
       if (!baseUrl) {
@@ -199,7 +195,7 @@ class AuthApiClient {
     if (response.success && response.data && typeof window !== "undefined") {
       localStorage.setItem("accessToken", response.data.token)
       localStorage.setItem("refreshToken", response.data.refreshToken)
-      
+
       // Store auto login token if provided
       if (response.data.autoLoginToken) {
         localStorage.setItem("autoLoginToken", response.data.autoLoginToken)

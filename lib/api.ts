@@ -2,7 +2,10 @@
 import { profileApi } from "./profile-api"
 
 // API endpoints configuration
-const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
+const API_ENDPOINTS = [
+  "https://localhost:7217/api", // Primary HTTPS endpoint
+  "http://localhost:5268/api", // Secondary HTTP endpoint
+]
 
 let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
 

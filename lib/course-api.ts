@@ -109,8 +109,8 @@ export interface CourseFilterDto {
   isActive?: boolean
   minPrice?: number
   maxPrice?: number
-  sortBy?: 'name' | 'price' | 'rating' | 'created'
-  sortDirection?: 'asc' | 'desc'
+  sortBy?: "name" | "price" | "rating" | "created"
+  sortDirection?: "asc" | "desc"
 }
 
 export interface CoursePagedResponseDto {
@@ -125,9 +125,9 @@ export interface CoursePagedResponseDto {
 
 // API Endpoints with environment-based configuration
 const API_ENDPOINTS = [
+  "https://localhost:7217/api", // Primary HTTPS endpoint
+  "http://localhost:5268/api", // Secondary HTTP endpoint
   process.env.NEXT_PUBLIC_API_URL,
-  "http://localhost:5268/api",
-  "https://localhost:7217/api",
 ].filter(Boolean) as string[]
 
 class CourseApiClient {
@@ -140,17 +140,17 @@ class CourseApiClient {
   private async findWorkingEndpoint(): Promise<string | null> {
     if (this.baseUrl) return this.baseUrl
 
-    // 1) Try general health endpoint
+    // Try general health endpoint first
     for (const endpoint of API_ENDPOINTS) {
       try {
-        const healthUrl = `${endpoint.replace(/\/api\/?$/, '')}/health`
+        const healthUrl = `${endpoint.replace(/\/api\/?$/, "")}/health`
         const res = await fetch(healthUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(5000),
         })
         if (res.ok) {
-          console.log(`✅ General health endpoint OK: ${healthUrl}`)
+          console.log(`✅ Courses API endpoint found: ${endpoint}`)
           this.baseUrl = endpoint
           return endpoint
         }
@@ -159,33 +159,11 @@ class CourseApiClient {
       }
     }
 
-    // 2) Try courses-specific health-check
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        const testUrl = `${endpoint}/Courses/health-check`
-        const res = await fetch(testUrl, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(5000),
-        })
-        if (res.ok || res.status === 404) {
-          console.log(`✅ Courses API endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch {
-        console.log(`❌ Failed to connect to Courses API: ${endpoint}`)
-      }
-    }
-
-    console.error('🚨 No working Courses API endpoints found')
+    console.error("🚨 No working Courses API endpoints found")
     return null
   }
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const baseUrl = await this.findWorkingEndpoint()
       if (!baseUrl) {
@@ -342,13 +320,23 @@ class CourseApiClient {
     try {
       const baseUrl = await this.findWorkingEndpoint()
       if (!baseUrl) {
-        return { success: false, message: "لا يمكن الاتصال بالخادم لرفع الصورة", timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8) }
+        return {
+          success: false,
+          message: "لا يمكن الاتصال بالخادم لرفع الصورة",
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+        }
       }
       const url = `${baseUrl}/Courses/upload-image/${courseId}`
       const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
       const formData = new FormData()
       formData.append("courseImage", file)
-      const response = await fetch(url, { method: "POST", headers: { Authorization: token ? `Bearer ${token}` : "" }, body: formData, signal: AbortSignal.timeout(30000) })
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: token ? `Bearer ${token}` : "" },
+        body: formData,
+        signal: AbortSignal.timeout(30000),
+      })
       console.log(`📡 Course Image Upload Response Status: ${response.status}`)
       let data: SecureAuthResponse<{ courseImage: string }>
       const contentType = response.headers.get("content-type")
@@ -356,13 +344,24 @@ class CourseApiClient {
         data = await response.json()
       } else {
         const text = await response.text()
-        data = { success: response.ok, message: text || response.statusText, timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8), statusCode: response.status }
+        data = {
+          success: response.ok,
+          message: text || response.statusText,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+          statusCode: response.status,
+        }
       }
       console.log(`📋 Course Image Upload Response:`, data)
       return data
     } catch (err: any) {
       console.error("🚨 Course Image Upload Error:", err)
-      return { success: false, message: "حدث خطأ أثناء رفع صورة الكورس", timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8) }
+      return {
+        success: false,
+        message: "حدث خطأ أثناء رفع صورة الكورس",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
     }
   }
 

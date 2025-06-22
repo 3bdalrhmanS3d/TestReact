@@ -9,9 +9,9 @@ import type {
 
 // API Endpoints with environment-based configuration
 const API_ENDPOINTS = [
+  "https://localhost:7217/api", // Primary HTTPS endpoint
+  "http://localhost:5268/api", // Secondary HTTP endpoint
   process.env.NEXT_PUBLIC_API_URL,
-  "http://localhost:5268/api",
-  "https://localhost:7217/api", // الـ port الصحيح
 ].filter(Boolean) as string[]
 
 class ProfileApiClient {
@@ -26,14 +26,15 @@ class ProfileApiClient {
 
     for (const endpoint of API_ENDPOINTS) {
       try {
-        const testUrl = `${endpoint}/Profile/health-check`
-        const response = await fetch(testUrl, {
+        // Try the main health endpoint first
+        const healthUrl = `${endpoint.replace("/api", "")}/health`
+        const response = await fetch(healthUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(5000),
         })
 
-        if (response.ok || response.status === 404) {
+        if (response.ok) {
           console.log(`✅ Profile API endpoint found: ${endpoint}`)
           this.baseUrl = endpoint
           return endpoint
@@ -43,34 +44,11 @@ class ProfileApiClient {
       }
     }
 
-    // Fall back to auth API endpoints
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        const testUrl = `${endpoint}/Auth/health-check`
-        const response = await fetch(testUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(5000),
-        })
-
-        if (response.ok || response.status === 404) {
-          console.log(`✅ Profile API fallback endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch (err) {
-        console.log(`❌ Failed fallback connection: ${endpoint}`)
-      }
-    }
-
     console.error("🚨 No working Profile API endpoints found")
     return null
   }
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const baseUrl = await this.findWorkingEndpoint()
       if (!baseUrl) {
