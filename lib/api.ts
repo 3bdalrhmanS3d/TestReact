@@ -142,10 +142,10 @@ class ApiClient {
   }
 
   // Dashboard Endpoints - Updated to match backend
-  async getUserStats() {
-    // Use profile API for user stats
-    return profileApi.getUserStats()
-  }
+  // async getUserStats() {
+  //   // Use profile API for user stats
+  //   return profileApi.getUserStats()
+  // }
 
   async searchCourses(search?: string) {
     const params = search ? `?search=${encodeURIComponent(search)}` : ""

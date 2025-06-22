@@ -4,32 +4,14 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { useRouter } from "next/navigation"
 import { profileApi } from "@/lib/profile-api"
 import { authApi } from "@/lib/auth-api"
-
-export interface AuthUser {
-  id: number
-  fullName: string
-  emailAddress: string
-  role: string
-  profilePhoto?: string
-  createdAt: string
-  birthDate?: string
-  edu?: string
-  national?: string
-  progress?: UserProgressDto[]
-}
-
-export interface UserProgressDto {
-  courseId: number
-  courseName: string
-  currentLevelId: number
-  currentSectionId: number
-  lastUpdated: string
-}
-
-export interface ProfileCompletionError {
-  requiredFields: Record<string, string>
-  profileCompletionUrl: string
-}
+import type {
+  AuthUser,
+  UserProgressDto,
+  UserProfileUpdateDto,
+  ChangeUserNameDto,
+  ChangePasswordDto,
+  ProfileCompletionError,
+} from "@/types/auth"
 
 interface AuthContextType {
   user: AuthUser | null
@@ -51,14 +33,11 @@ interface AuthContextType {
   logout: () => Promise<void>
   refreshToken: () => Promise<boolean>
   loadProfile: () => Promise<void>
-  updateProfile: (data: {
-    birthDate: string
-    edu: string
-    national: string
-  }) => Promise<{ success: boolean; message?: string }>
-  clearError: () => void
-  isProfileComplete: boolean
-  requiredFields: Record<string, string> | null
+  updateProfile: (data: UserProfileUpdateDto) => Promise<{ success: boolean; message?: string }>
+  changeUserName: (data: ChangeUserNameDto) => Promise<{ success: boolean; message?: string }>
+  changePassword: (data: ChangePasswordDto) => Promise<{ success: boolean; message?: string }>
+  uploadProfilePhoto: (file: File) => Promise<{ success: boolean; message?: string; profilePhoto?: string }>
+  deleteProfilePhoto: () => Promise<{ success: boolean; message?: string }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -67,54 +46,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [profile, setProfile] = useState<AuthUser | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [profileIncomplete, setProfileIncomplete] = useState(false)
   const [profileCompletionData, setProfileCompletionData] = useState<ProfileCompletionError | null>(null)
-  const [error, setError] = useState<string | null>(null)
   const [apiAvailable, setApiAvailable] = useState(true)
-  const [isProfileComplete, setIsProfileComplete] = useState<boolean>(false)
+  const [isProfileComplete, setIsProfileComplete] = useState(false)
   const [requiredFields, setRequiredFields] = useState<Record<string, string> | null>(null)
   const router = useRouter()
 
-  const clearError = () => setError(null)
+  const isAuthenticated = !!user
 
-  const checkApiHealth = async () => {
-    try {
-      const isAvailable = await authApi.testConnection()
-      setApiAvailable(isAvailable)
-      return isAvailable
-    } catch {
-      setApiAvailable(false)
-      return false
+  // Check API availability
+  useEffect(() => {
+    const checkApiAvailability = async () => {
+      try {
+        const authAvailable = await authApi.testConnection()
+        const profileAvailable = await profileApi.testConnection()
+        setApiAvailable(authAvailable || profileAvailable)
+      } catch (err) {
+        console.error("🚨 API availability check failed:", err)
+        setApiAvailable(false)
+      }
     }
-  }
+
+    checkApiAvailability()
+  }, [])
+
+  // Auto login check on app start
+  useEffect(() => {
+    const initializeAuth = async () => {
+      try {
+        setLoading(true)
+        
+        // Check for existing token
+        const accessToken = localStorage.getItem("accessToken")
+        const refreshTokenValue = localStorage.getItem("refreshToken")
+        
+        if (accessToken) {
+          console.log("🔑 Found access token, loading profile...")
+          await loadProfile()
+        } else if (refreshTokenValue) {
+          console.log("🔄 Found refresh token, attempting refresh...")
+          const success = await refreshToken()
+          if (success) {
+            await loadProfile()
+          }
+        } else {
+          // Try auto login from cookie
+          console.log("🍪 Attempting auto login from cookie...")
+          const autoLoginResponse = await authApi.autoLoginFromCookie()
+          if (autoLoginResponse.success && autoLoginResponse.data) {
+            localStorage.setItem("accessToken", autoLoginResponse.data.token)
+            localStorage.setItem("refreshToken", autoLoginResponse.data.refreshToken)
+            await loadProfile()
+          } else {
+            console.log("❌ No valid authentication found")
+            setLoading(false)
+          }
+        }
+      } catch (err) {
+        console.error("🚨 Auth initialization error:", err)
+        setLoading(false)
+      }
+    }
+
+    if (apiAvailable) {
+      initializeAuth()
+    } else {
+      setLoading(false)
+    }
+  }, [apiAvailable])
 
   const loadProfile = async () => {
     try {
-      console.log("🔄 Loading user profile...")
-      const token = localStorage.getItem("accessToken")
-      if (!token) {
-        console.log("❌ No access token found")
-        setProfileIncomplete(false)
-        setProfileCompletionData(null)
-        setIsProfileComplete(false)
-        setRequiredFields(null)
-        return
-      }
-
+      console.log("👤 Loading user profile...")
       const response = await profileApi.getProfile()
-      console.log("📋 Profile API Response:", response)
+      console.log("📋 Profile response:", response)
 
       if (response.success && response.data) {
-        const data = response.data
         console.log("✅ Profile loaded successfully")
-        setProfile(data)
-        setUser(data)
-        setIsProfileComplete(data.isProfileComplete)
-        setRequiredFields(data.requiredFields || null)
-        if (!data.isProfileComplete) {
+        const authUser: AuthUser = {
+          userId: response.data.id,
+          email: response.data.emailAddress,
+          // Add other AuthUser properties here, mapping from response.data as needed
+          ...(response.data as any)
+        }
+        setProfile(authUser)
+        setUser(authUser)
+        setIsProfileComplete(response.data.isProfileComplete)
+        setRequiredFields(response.data.requiredFields || null)
+        
+        if (!response.data.isProfileComplete) {
           setProfileIncomplete(true)
           setProfileCompletionData({
-            requiredFields: data.requiredFields || {},
+            requiredFields: response.data.requiredFields || {},
             profileCompletionUrl: "/api/profile/update"
           })
         } else {
@@ -141,10 +166,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setProfileCompletionData(null)
       setIsProfileComplete(false)
       setRequiredFields(null)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const updateProfile = async (data: { birthDate: string; edu: string; national: string }) => {
+  const updateProfile = async (data: UserProfileUpdateDto) => {
     try {
       console.log("🔄 Updating profile with data:", data)
       const response = await profileApi.updateProfile(data)
@@ -164,6 +191,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const changeUserName = async (data: ChangeUserNameDto) => {
+    try {
+      console.log("✏️ Changing username:", data.newFullName)
+      const response = await profileApi.changeUserName(data)
+      console.log("📝 Username change response:", response)
+
+      if (response.success) {
+        console.log("✅ Username changed successfully")
+        
+        // If token refresh is required, reload the page
+        if (response.data?.requiresTokenRefresh) {
+          window.location.reload()
+          return { success: true, message: "تم تغيير الاسم بنجاح. سيتم تحديث الصفحة..." }
+        }
+        
+        await loadProfile()
+        return { success: true, message: response.message || "تم تغيير الاسم بنجاح" }
+      }
+
+      console.log("❌ Username change failed:", response.message)
+      return { success: false, message: response.message || "فشل في تغيير الاسم" }
+    } catch (err: any) {
+      console.error("🚨 Username change error:", err)
+      return { success: false, message: "حدث خطأ أثناء تغيير الاسم" }
+    }
+  }
+
+  const changePassword = async (data: ChangePasswordDto) => {
+    try {
+      console.log("🔒 Changing password...")
+      const response = await profileApi.changePassword(data)
+      console.log("📝 Password change response:", response)
+
+      if (response.success) {
+        console.log("✅ Password changed successfully")
+        return { success: true, message: response.message || "تم تغيير كلمة المرور بنجاح" }
+      }
+
+      console.log("❌ Password change failed:", response.message)
+      return { success: false, message: response.message || "فشل في تغيير كلمة المرور" }
+    } catch (err: any) {
+      console.error("🚨 Password change error:", err)
+      return { success: false, message: "حدث خطأ أثناء تغيير كلمة المرور" }
+    }
+  }
+
+  const uploadProfilePhoto = async (file: File) => {
+    try {
+      console.log("📸 Uploading profile photo...")
+      const response = await profileApi.uploadProfilePhoto(file)
+      console.log("📝 Photo upload response:", response)
+
+      if (response.success) {
+        console.log("✅ Photo uploaded successfully")
+        await loadProfile()
+        return { 
+          success: true, 
+          message: response.message || "تم رفع الصورة بنجاح",
+          profilePhoto: response.data?.profilePhoto
+        }
+      }
+
+      console.log("❌ Photo upload failed:", response.message)
+      return { success: false, message: response.message || "فشل في رفع الصورة" }
+    } catch (err: any) {
+      console.error("🚨 Photo upload error:", err)
+      return { success: false, message: "حدث خطأ أثناء رفع الصورة" }
+    }
+  }
+
+  const deleteProfilePhoto = async () => {
+    try {
+      console.log("🗑️ Deleting profile photo...")
+      const response = await profileApi.deleteProfilePhoto()
+      console.log("📝 Photo delete response:", response)
+
+      if (response.success) {
+        console.log("✅ Photo deleted successfully")
+        await loadProfile()
+        return { success: true, message: response.message || "تم حذف الصورة بنجاح" }
+      }
+
+      console.log("❌ Photo delete failed:", response.message)
+      return { success: false, message: response.message || "فشل في حذف الصورة" }
+    } catch (err: any) {
+      console.error("🚨 Photo delete error:", err)
+      return { success: false, message: "حدث خطأ أثناء حذف الصورة" }
+    }
+  }
+
   const signin = async (email: string, password: string, rememberMe = false) => {
     try {
       console.log("🔐 Signing in user:", email)
@@ -178,6 +295,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("accessToken", response.data.token)
         if (response.data.refreshToken) {
           localStorage.setItem("refreshToken", response.data.refreshToken)
+        }
+        if (response.data.autoLoginToken) {
+          localStorage.setItem("autoLoginToken", response.data.autoLoginToken)
         }
         await loadProfile()
         return { success: true }
@@ -223,110 +343,96 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const logout = async () => {
-    try {
-      console.log("🚪 Logging out user")
-      const refreshToken = localStorage.getItem("refreshToken")
-      if (refreshToken && apiAvailable) {
-        await authApi.logout()
-      }
-    } catch (err) {
-      console.error("Logout error:", err)
-    } finally {
-      localStorage.removeItem("accessToken")
-      localStorage.removeItem("refreshToken")
-      setUser(null)
-      setProfile(null)
-      setProfileIncomplete(false)
-      setProfileCompletionData(null)
-      setError(null)
-      setIsProfileComplete(false)
-      setRequiredFields(null)
-      router.push("/auth/signin")
-    }
-  }
-
   const refreshToken = async (): Promise<boolean> => {
     try {
-      const refreshTokenValue = localStorage.getItem("refreshToken")
-      if (!refreshTokenValue) return false
+      const oldRefreshToken = localStorage.getItem("refreshToken")
+      if (!oldRefreshToken) {
+        console.log("❌ No refresh token available")
+        return false
+      }
 
-      const response = await authApi.refreshToken({ oldRefreshToken: refreshTokenValue })
+      console.log("🔄 Refreshing token...")
+      const response = await authApi.refreshToken({ oldRefreshToken })
+      console.log("🔑 Token refresh response:", response)
+
       if (response.success && response.data) {
+        console.log("✅ Token refreshed successfully")
         localStorage.setItem("accessToken", response.data.token)
-        if (response.data.refreshToken) {
-          localStorage.setItem("refreshToken", response.data.refreshToken)
-        }
+        localStorage.setItem("refreshToken", response.data.refreshToken)
         return true
       }
 
+      console.log("❌ Token refresh failed:", response.message)
+      await logout()
       return false
-    } catch (err) {
-      console.error("Token refresh error:", err)
+    } catch (err: any) {
+      console.error("🚨 Token refresh error:", err)
+      await logout()
       return false
     }
   }
 
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        console.log("🚀 Initializing authentication...")
-        setLoading(true)
-
-        const isApiHealthy = await checkApiHealth()
-        if (!isApiHealthy) {
-          console.log("❌ API not healthy")
-          setError("الخادم غير متاح حالياً")
-          return
-        }
-
-        const token = localStorage.getItem("accessToken")
-        if (!token) {
-          console.log("ℹ️ No token found, user not authenticated")
-          return
-        }
-
-        const refreshed = await refreshToken()
-        if (!refreshed) {
-          console.log("❌ Token refresh failed, clearing tokens")
-          localStorage.removeItem("accessToken")
-          localStorage.removeItem("refreshToken")
-          return
-        }
-
-        await loadProfile()
-      } catch (err) {
-        console.error("🚨 Auth initialization error:", err)
-        setError("حدث خطأ أثناء تهيئة المصادقة")
-      } finally {
-        setLoading(false)
-      }
+  const logout = async () => {
+    try {
+      console.log("🚪 Logging out...")
+      setLoading(true)
+      
+      // Call logout API
+      await authApi.logout()
+      
+      // Clear local state
+      setUser(null)
+      setProfile(null)
+      setError(null)
+      setProfileIncomplete(false)
+      setProfileCompletionData(null)
+      setIsProfileComplete(false)
+      setRequiredFields(null)
+      
+      // Clear localStorage
+      localStorage.removeItem("accessToken")
+      localStorage.removeItem("refreshToken")
+      localStorage.removeItem("autoLoginToken")
+      
+      console.log("✅ Logout successful")
+      router.push("/auth/signin")
+    } catch (err: any) {
+      console.error("🚨 Logout error:", err)
+      // Clear state anyway
+      setUser(null)
+      setProfile(null)
+      router.push("/auth/signin")
+    } finally {
+      setLoading(false)
     }
-
-    initAuth()
-  }, [])
-
-  const value: AuthContextType = {
-    user,
-    profile,
-    isAuthenticated: !!user,
-    loading,
-    profileIncomplete,
-    profileCompletionData,
-    error,
-    apiAvailable,
-    signin,
-    signup,
-    logout,
-    refreshToken,
-    loadProfile,
-    updateProfile,
-    clearError,
-    isProfileComplete,
-    requiredFields
   }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        isAuthenticated,
+        loading,
+        profileIncomplete,
+        profileCompletionData,
+        error,
+        apiAvailable,
+        signin,
+        signup,
+        logout,
+        refreshToken,
+        loadProfile,
+        updateProfile,
+        changeUserName,
+        changePassword,
+        uploadProfilePhoto,
+        deleteProfilePhoto,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 export function useAuth() {

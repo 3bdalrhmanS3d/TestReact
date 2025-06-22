@@ -1,225 +1,380 @@
-import { apiClient } from "./api"
-import type {
-  Course,
-  CourseDetails,
-  CreateCourseDto,
-  PublicCourse,
-  CourseBrowseFilter,
-  PagedResult,
-} from "@/types/course"
+import type { SecureAuthResponse } from "@/types/auth"
+
+// Course Types
+export interface CourseDto {
+  courseId: number
+  courseName: string
+  description: string
+  coursePrice: number
+  isActive: boolean
+  instructorId: number
+  instructorName: string
+  courseImage?: string
+  createdAt: string
+  updatedAt: string
+  enrollmentCount: number
+  averageRating?: number
+  totalRatings: number
+  isEnrolled?: boolean
+  enrollmentDate?: string
+  progress?: CourseProgressDto
+  aboutCourse: AboutCourseDto[]
+  courseSkills: CourseSkillDto[]
+}
+
+export interface CourseProgressDto {
+  courseId: number
+  userId: number
+  currentLevelId?: number
+  currentSectionId?: number
+  completedLevels: number
+  totalLevels: number
+  completedSections: number
+  totalSections: number
+  progressPercentage: number
+  lastAccessedAt: string
+}
+
+export interface AboutCourseDto {
+  aboutCourseId: number
+  text: string
+  type: string
+}
+
+export interface CourseSkillDto {
+  courseSkillId: number
+  skillName: string
+}
+
+export interface CreateCourseDto {
+  courseName: string
+  description: string
+  coursePrice: number
+  isActive: boolean
+  aboutCourseInputs: AboutCourseInput[]
+  courseSkillInputs: CourseSkillInput[]
+}
+
+export interface AboutCourseInput {
+  text: string
+  type: string
+}
+
+export interface CourseSkillInput {
+  skillName: string
+}
+
+export interface UpdateCourseDto extends Partial<CreateCourseDto> {
+  courseId: number
+}
+
+export interface CourseLevelDto {
+  levelId: number
+  levelName: string
+  levelOrder: number
+  isUnlocked: boolean
+  sections: CourseSectionDto[]
+}
+
+export interface CourseSectionDto {
+  sectionId: number
+  sectionName: string
+  sectionOrder: number
+  isCompleted: boolean
+  contents: CourseContentDto[]
+}
+
+export interface CourseContentDto {
+  contentId: number
+  title: string
+  description?: string
+  contentType: string
+  contentUrl?: string
+  duration?: number
+  isCompleted: boolean
+  order: number
+}
+
+export interface EnrollmentDto {
+  courseId: number
+  enrollmentDate: string
+  isActive: boolean
+}
+
+export interface CourseFilterDto {
+  pageNumber: number
+  pageSize: number
+  searchTerm?: string
+  instructorId?: number
+  isActive?: boolean
+  minPrice?: number
+  maxPrice?: number
+  sortBy?: 'name' | 'price' | 'rating' | 'created'
+  sortDirection?: 'asc' | 'desc'
+}
+
+export interface CoursePagedResponseDto {
+  courses: CourseDto[]
+  totalCount: number
+  currentPage: number
+  pageSize: number
+  totalPages: number
+  hasNext: boolean
+  hasPrevious: boolean
+}
+
+// API Endpoints with environment-based configuration
+const API_ENDPOINTS = [
+  process.env.NEXT_PUBLIC_API_URL,
+  "http://localhost:5268/api",
+  "https://localhost:7217/api",
+].filter(Boolean) as string[]
 
 class CourseApiClient {
-  // Public browsing methods
-  async browseCourses(filter: CourseBrowseFilter): Promise<PagedResult<PublicCourse>> {
-    const response = await apiClient.request<PagedResult<PublicCourse>>("/Courses/browse", {
-      method: "POST",
-      body: JSON.stringify(filter),
-    })
+  private baseUrl: string | null = null
 
-    if (response.success && response.data) {
-      return response.data
-    }
-
-    throw new Error(response.message || "Failed to browse courses")
+  constructor() {
+    this.findWorkingEndpoint()
   }
 
-  async getFeaturedCourses(limit = 6): Promise<PublicCourse[]> {
-    const response = await apiClient.request<PublicCourse[]>(`/Courses/featured?limit=${limit}`)
+  private async findWorkingEndpoint(): Promise<string | null> {
+    if (this.baseUrl) return this.baseUrl
 
-    if (response.success && response.data) {
-      return response.data
+    // 1) Try general health endpoint
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        const healthUrl = `${endpoint.replace(/\/api\/?$/, '')}/health`
+        const res = await fetch(healthUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok) {
+          console.log(`✅ General health endpoint OK: ${healthUrl}`)
+          this.baseUrl = endpoint
+          return endpoint
+        }
+      } catch (err) {
+        console.log(`❌ Failed to connect to Courses API: ${endpoint}`)
+      }
     }
 
-    return []
+    // 2) Try courses-specific health-check
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        const testUrl = `${endpoint}/Courses/health-check`
+        const res = await fetch(testUrl, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(5000),
+        })
+        if (res.ok || res.status === 404) {
+          console.log(`✅ Courses API endpoint found: ${endpoint}`)
+          this.baseUrl = endpoint
+          return endpoint
+        }
+      } catch {
+        console.log(`❌ Failed to connect to Courses API: ${endpoint}`)
+      }
+    }
+
+    console.error('🚨 No working Courses API endpoints found')
+    return null
   }
 
-  async getPopularCourses(limit = 6): Promise<PublicCourse[]> {
-    const response = await apiClient.request<PublicCourse[]>(`/Courses/popular?limit=${limit}`)
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
+    try {
+      const baseUrl = await this.findWorkingEndpoint()
+      if (!baseUrl) {
+        return {
+          success: false,
+          message: `لا يمكن الاتصال بخادم الكورسات. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+        }
+      }
 
-    if (response.success && response.data) {
-      return response.data
-    }
+      const url = `${baseUrl}${endpoint}`
+      console.log(`📚 Courses API Request: ${options.method || "GET"} ${url}`)
 
-    return []
-  }
+      // Get token from localStorage
+      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
 
-  async getPublicCourseDetails(courseId: number): Promise<any> {
-    const response = await apiClient.request(`/Courses/${courseId}/public`)
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      }
 
-    if (response.success && response.data) {
-      return response.data
-    }
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`
+      }
 
-    throw new Error(response.message || "Course not found")
-  }
+      const config: RequestInit = {
+        ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+        signal: AbortSignal.timeout(30000),
+      }
 
-  // Instructor methods
-  async getMyCoursesAsInstructor(pageNumber = 1, pageSize = 10): Promise<Course[]> {
-    const response = await apiClient.request<Course[]>(
-      `/Courses/instructor/my-courses?pageNumber=${pageNumber}&pageSize=${pageSize}`,
-    )
+      const response = await fetch(url, config)
+      console.log(`📡 Courses Response Status: ${response.status}`)
 
-    if (response.success && response.data) {
-      return response.data
-    }
+      let data: SecureAuthResponse<T>
+      const contentType = response.headers.get("content-type")
 
-    return []
-  }
+      if (contentType?.includes("application/json")) {
+        data = await response.json()
+      } else {
+        const text = await response.text()
+        data = {
+          success: response.ok,
+          message: text || response.statusText,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+          statusCode: response.status,
+        }
+      }
 
-  async getCourseDetails(courseId: number): Promise<CourseDetails> {
-    const response = await apiClient.request<CourseDetails>(`/Courses/${courseId}/details`)
+      console.log(`📋 Courses Response Data:`, data)
 
-    if (response.success && response.data) {
-      return response.data
-    }
+      return {
+        ...data,
+        statusCode: response.status,
+      }
+    } catch (err: any) {
+      console.error("🚨 Courses API Request Error:", err)
 
-    throw new Error(response.message || "Course not found")
-  }
+      if (err.name === "AbortError") {
+        return {
+          success: false,
+          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+        }
+      }
 
-  async createCourse(courseData: CreateCourseDto, imageFile?: File): Promise<number> {
-    const formData = new FormData()
-    formData.append("courseName", courseData.courseName)
-    formData.append("description", courseData.description)
-    formData.append("coursePrice", courseData.coursePrice.toString())
-    formData.append("isActive", courseData.isActive.toString())
-
-    if (courseData.aboutCourseInputs) {
-      courseData.aboutCourseInputs.forEach((about, index) => {
-        formData.append(`aboutCourseInputs[${index}].aboutCourseText`, about.aboutCourseText)
-        formData.append(`aboutCourseInputs[${index}].outcomeType`, about.outcomeType)
-      })
-    }
-
-    if (courseData.courseSkillInputs) {
-      courseData.courseSkillInputs.forEach((skill, index) => {
-        formData.append(`courseSkillInputs[${index}]`, skill)
-      })
-    }
-
-    if (imageFile) {
-      formData.append("courseImage", imageFile)
-    }
-
-    const response = await apiClient.request<number>("/Courses", {
-      method: "POST",
-      body: formData,
-      headers: {
-        // Remove Content-Type to let browser set it with boundary for FormData
-      },
-    })
-
-    if (response.success && response.data) {
-      return response.data
-    }
-
-    throw new Error(response.message || "Failed to create course")
-  }
-
-  async updateCourse(courseId: number, courseData: Partial<CreateCourseDto>): Promise<void> {
-    const response = await apiClient.request(`/Courses/${courseId}`, {
-      method: "PUT",
-      body: JSON.stringify(courseData),
-    })
-
-    if (!response.success) {
-      throw new Error(response.message || "Failed to update course")
-    }
-  }
-
-  async deleteCourse(courseId: number): Promise<void> {
-    const response = await apiClient.request(`/Courses/${courseId}`, {
-      method: "DELETE",
-    })
-
-    if (!response.success) {
-      throw new Error(response.message || "Failed to delete course")
-    }
-  }
-
-  async toggleCourseStatus(courseId: number): Promise<void> {
-    const response = await apiClient.request(`/Courses/${courseId}/toggle-status`, {
-      method: "PATCH",
-    })
-
-    if (!response.success) {
-      throw new Error(response.message || "Failed to toggle course status")
-    }
-  }
-
-  // Admin methods
-  async getAllCoursesForAdmin(
-    pageNumber = 1,
-    pageSize = 10,
-    searchTerm?: string,
-    isActive?: boolean,
-  ): Promise<Course[]> {
-    const params = new URLSearchParams({
-      pageNumber: pageNumber.toString(),
-      pageSize: pageSize.toString(),
-    })
-
-    if (searchTerm) params.append("searchTerm", searchTerm)
-    if (isActive !== undefined) params.append("isActive", isActive.toString())
-
-    const response = await apiClient.request<Course[]>(`/Courses/admin/all?${params}`)
-
-    if (response.success && response.data) {
-      return response.data
-    }
-
-    return []
-  }
-
-  async transferCourseOwnership(courseId: number, newInstructorId: number): Promise<void> {
-    const response = await apiClient.request(`/Courses/${courseId}/transfer-ownership`, {
-      method: "PATCH",
-      body: JSON.stringify({ newInstructorId }),
-    })
-
-    if (!response.success) {
-      throw new Error(response.message || "Failed to transfer course ownership")
+      return {
+        success: false,
+        message: "حدث خطأ في الشبكة أثناء تحميل الكورسات.",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
+      }
     }
   }
 
-  // Shared methods
-  async uploadCourseImage(courseId: number, file: File): Promise<string> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    const response = await apiClient.request<string>(`/Courses/${courseId}/upload-image`, {
-      method: "POST",
-      body: formData,
-      headers: {
-        // Remove Content-Type to let browser set it with boundary for FormData
-      },
-    })
-
-    if (response.success && response.data) {
-      return response.data
-    }
-
-    throw new Error(response.message || "Failed to upload image")
+  // Get all courses with pagination and filters
+  async getCourses(filter: CourseFilterDto): Promise<SecureAuthResponse<CoursePagedResponseDto>> {
+    console.log("📚 Fetching courses with filter:", filter)
+    const params = new URLSearchParams()
+    params.append("pageNumber", filter.pageNumber.toString())
+    params.append("pageSize", filter.pageSize.toString())
+    if (filter.searchTerm) params.append("searchTerm", filter.searchTerm)
+    if (filter.instructorId) params.append("instructorId", filter.instructorId.toString())
+    if (filter.isActive !== undefined) params.append("isActive", filter.isActive.toString())
+    if (filter.minPrice !== undefined) params.append("minPrice", filter.minPrice.toString())
+    if (filter.maxPrice !== undefined) params.append("maxPrice", filter.maxPrice.toString())
+    if (filter.sortBy) params.append("sortBy", filter.sortBy)
+    if (filter.sortDirection) params.append("sortDirection", filter.sortDirection)
+    return this.request<CoursePagedResponseDto>(`/Courses/get-courses?${params}`, { method: "GET" })
   }
 
-  async getAvailableSkills(
-    searchTerm?: string,
-    pageNumber = 1,
-    pageSize = 50,
-  ): Promise<{ skills: string[]; totalCount: number }> {
-    const params = new URLSearchParams({
-      pageNumber: pageNumber.toString(),
-      pageSize: pageSize.toString(),
-    })
+  // Get user's enrolled courses
+  async getEnrolledCourses(): Promise<SecureAuthResponse<CourseDto[]>> {
+    console.log("📚 Fetching enrolled courses...")
+    return this.request<CourseDto[]>("/Courses/enrolled-courses", { method: "GET" })
+  }
 
-    if (searchTerm) params.append("searchTerm", searchTerm)
+  // Get instructor's courses
+  async getInstructorCourses(): Promise<SecureAuthResponse<CourseDto[]>> {
+    console.log("👨‍🏫 Fetching instructor courses...")
+    return this.request<CourseDto[]>("/Courses/instructor-courses", { method: "GET" })
+  }
 
-    const response = await apiClient.request<{ skills: string[]; totalCount: number }>(`/Courses/skills?${params}`)
+  // Get course by ID
+  async getCourse(courseId: number): Promise<SecureAuthResponse<CourseDto>> {
+    console.log("📖 Fetching course:", courseId)
+    return this.request<CourseDto>(`/Courses/get-course/${courseId}`, { method: "GET" })
+  }
 
-    if (response.success && response.data) {
-      return response.data
+  // Create new course (Instructor/Admin only)
+  async createCourse(data: CreateCourseDto): Promise<SecureAuthResponse<CourseDto>> {
+    console.log("➕ Creating course:", data.courseName)
+    return this.request<CourseDto>("/Courses/create-course", { method: "POST", body: JSON.stringify(data) })
+  }
+
+  // Update course (Instructor/Admin only)
+  async updateCourse(data: UpdateCourseDto): Promise<SecureAuthResponse<CourseDto>> {
+    console.log("✏️ Updating course:", data.courseId)
+    return this.request<CourseDto>("/Courses/update-course", { method: "PUT", body: JSON.stringify(data) })
+  }
+
+  // Delete course (Instructor/Admin only)
+  async deleteCourse(courseId: number): Promise<SecureAuthResponse> {
+    console.log("🗑️ Deleting course:", courseId)
+    return this.request(`/Courses/delete-course/${courseId}`, { method: "DELETE" })
+  }
+
+  // Enroll in course
+  async enrollInCourse(courseId: number): Promise<SecureAuthResponse<EnrollmentDto>> {
+    console.log("📝 Enrolling in course:", courseId)
+    return this.request<EnrollmentDto>("/Courses/enroll", { method: "POST", body: JSON.stringify({ courseId }) })
+  }
+
+  // Get course structure (levels, sections, content)
+  async getCourseStructure(courseId: number): Promise<SecureAuthResponse<CourseLevelDto[]>> {
+    console.log("🏗️ Fetching course structure:", courseId)
+    return this.request<CourseLevelDto[]>(`/Courses/structure/${courseId}`, { method: "GET" })
+  }
+
+  // Get course progress
+  async getCourseProgress(courseId: number): Promise<SecureAuthResponse<CourseProgressDto>> {
+    console.log("📊 Fetching course progress:", courseId)
+    return this.request<CourseProgressDto>(`/Courses/progress/${courseId}`, { method: "GET" })
+  }
+
+  // Upload course image
+  async uploadCourseImage(courseId: number, file: File): Promise<SecureAuthResponse<{ courseImage: string }>> {
+    try {
+      const baseUrl = await this.findWorkingEndpoint()
+      if (!baseUrl) {
+        return { success: false, message: "لا يمكن الاتصال بالخادم لرفع الصورة", timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8) }
+      }
+      const url = `${baseUrl}/Courses/upload-image/${courseId}`
+      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+      const formData = new FormData()
+      formData.append("courseImage", file)
+      const response = await fetch(url, { method: "POST", headers: { Authorization: token ? `Bearer ${token}` : "" }, body: formData, signal: AbortSignal.timeout(30000) })
+      console.log(`📡 Course Image Upload Response Status: ${response.status}`)
+      let data: SecureAuthResponse<{ courseImage: string }>
+      const contentType = response.headers.get("content-type")
+      if (contentType?.includes("application/json")) {
+        data = await response.json()
+      } else {
+        const text = await response.text()
+        data = { success: response.ok, message: text || response.statusText, timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8), statusCode: response.status }
+      }
+      console.log(`📋 Course Image Upload Response:`, data)
+      return data
+    } catch (err: any) {
+      console.error("🚨 Course Image Upload Error:", err)
+      return { success: false, message: "حدث خطأ أثناء رفع صورة الكورس", timestamp: new Date().toISOString(), requestId: Math.random().toString(36).substr(2, 8) }
     }
+  }
 
-    return { skills: [], totalCount: 0 }
+  // Get course statistics (for instructors)
+  async getCourseStats(courseId: number): Promise<SecureAuthResponse<any>> {
+    console.log("📈 Fetching course stats:", courseId)
+    return this.request(`/Courses/stats/${courseId}`, { method: "GET" })
+  }
+
+  async testConnection(): Promise<boolean> {
+    const endpoint = await this.findWorkingEndpoint()
+    return endpoint !== null
   }
 }
 

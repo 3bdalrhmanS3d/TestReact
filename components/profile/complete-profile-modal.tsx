@@ -82,7 +82,7 @@ function CompleteProfileForm() {
       )}
 
       {/* Education Level */}
-      {requiredFields.EducationLevel && (
+      {requiredFields.Education && (
         <div className="space-y-2">
           <Label htmlFor="edu" className="flex items-center gap-2 text-right">
             <GraduationCap className="h-4 w-4" />
@@ -103,7 +103,7 @@ function CompleteProfileForm() {
               <SelectItem value="أخرى">أخرى</SelectItem>
             </SelectContent>
           </Select>
-          <p className="text-xs text-muted-foreground text-right">{requiredFields.EducationLevel}</p>
+          <p className="text-xs text-muted-foreground text-right">{requiredFields.Education}</p>
         </div>
       )}
 

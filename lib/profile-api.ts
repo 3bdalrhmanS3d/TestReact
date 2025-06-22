@@ -3,267 +3,264 @@ import type {
   UserProfileUpdateDto,
   ChangeUserNameDto,
   ChangePasswordDto,
-  PaymentRequestDto,
-  MyCourseDto,
-  CourseDto,
-  UserActivityDto,
-  StudentStatsDto,
   ChangeUserNameResultDto,
+  SecureAuthResponse,
 } from "@/types/auth"
 
-// API endpoints configuration
-const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
-
-let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
-
-interface ApiResponse<T = any> {
-  success: boolean
-  data?: T
-  message?: string
-  errorCode?: string
-  errors?: any
-  statusCode?: number
-}
+// API Endpoints with environment-based configuration
+const API_ENDPOINTS = [
+  process.env.NEXT_PUBLIC_API_URL,
+  "http://localhost:5268/api",
+  "https://localhost:7217/api", // الـ port الصحيح
+].filter(Boolean) as string[]
 
 class ProfileApiClient {
+  private baseUrl: string | null = null
+
+  constructor() {
+    this.findWorkingEndpoint()
+  }
+
   private async findWorkingEndpoint(): Promise<string | null> {
+    if (this.baseUrl) return this.baseUrl
+
     for (const endpoint of API_ENDPOINTS) {
       try {
-        console.log(`🔍 Testing profile endpoint: ${endpoint}`)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 3000)
-
-        const healthUrl = endpoint.replace("/api", "") + "/health"
-        const res = await fetch(healthUrl, {
-          signal: controller.signal,
+        const testUrl = `${endpoint}/Profile/health-check`
+        const response = await fetch(testUrl, {
           method: "GET",
           headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(5000),
         })
-        clearTimeout(timeoutId)
 
-        if (res.ok) {
-          console.log(`✅ Profile endpoint working: ${endpoint}`)
-          CURRENT_API_BASE_URL = endpoint
+        if (response.ok || response.status === 404) {
+          console.log(`✅ Profile API endpoint found: ${endpoint}`)
+          this.baseUrl = endpoint
           return endpoint
         }
       } catch (err) {
-        console.log(`❌ Profile endpoint failed: ${endpoint}`, err)
+        console.log(`❌ Failed to connect to Profile API: ${endpoint}`)
       }
     }
-    console.log("🚨 No working profile endpoint found")
+
+    // Fall back to auth API endpoints
+    for (const endpoint of API_ENDPOINTS) {
+      try {
+        const testUrl = `${endpoint}/Auth/health-check`
+        const response = await fetch(testUrl, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(5000),
+        })
+
+        if (response.ok || response.status === 404) {
+          console.log(`✅ Profile API fallback endpoint found: ${endpoint}`)
+          this.baseUrl = endpoint
+          return endpoint
+        }
+      } catch (err) {
+        console.log(`❌ Failed fallback connection: ${endpoint}`)
+      }
+    }
+
+    console.error("🚨 No working Profile API endpoints found")
     return null
   }
 
-  private getAuthHeaders(): HeadersInit {
-    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
-    return {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-    }
-  }
-
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<ApiResponse<T>> {
-    const base = await this.findWorkingEndpoint()
-    if (!base) {
-      return {
-        success: false,
-        message: "لا يمكن الوصول للخادم. تحقق من اتصالك بالإنترنت.",
-        statusCode: 0,
-      }
-    }
-
-    const url = `${base}${endpoint}`
-    console.log(`🌐 Profile API Request: ${options.method || "GET"} ${url}`)
-
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          ...this.getAuthHeaders(),
-          ...options.headers,
-        },
-        credentials: "include",
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-
-      console.log(`📡 Profile Response Status: ${res.status} ${res.statusText}`)
-
-      let data: any
-      const contentType = res.headers.get("content-type") || ""
-
-      if (contentType.includes("application/json")) {
-        data = await res.json()
-        console.log("📥 Profile Response Data:", data)
-      } else {
-        const text = await res.text()
-        console.log("📄 Profile Response Text:", text)
-        data = { message: text || res.statusText }
-      }
-
-      if (!res.ok) {
-        console.warn("❌ Profile API Error:", data)
+      const baseUrl = await this.findWorkingEndpoint()
+      if (!baseUrl) {
         return {
           success: false,
-          message: data.message || data.Message || res.statusText || `خطأ في الخادم (${res.status})`,
-          errorCode: data.errorCode || data.ErrorCode,
-          errors: data.errors || data.Errors,
-          statusCode: res.status,
+          message: `لا يمكن الاتصال بخادم الملف الشخصي. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
         }
       }
 
+      const url = `${baseUrl}${endpoint}`
+      console.log(`🌐 Profile API Request: ${options.method || "GET"} ${url}`)
+
+      // Get token from localStorage
+      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      }
+
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`
+      }
+
+      const config: RequestInit = {
+        ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+        signal: AbortSignal.timeout(30000),
+      }
+
+      const response = await fetch(url, config)
+      console.log(`📡 Profile Response Status: ${response.status}`)
+
+      let data: SecureAuthResponse<T>
+      const contentType = response.headers.get("content-type")
+
+      if (contentType?.includes("application/json")) {
+        data = await response.json()
+      } else {
+        const text = await response.text()
+        data = {
+          success: response.ok,
+          message: text || response.statusText,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+          statusCode: response.status,
+        }
+      }
+
+      console.log(`📋 Profile Response Data:`, data)
+
       return {
-        success: true,
-        data: data.data || data.Data || data,
-        message: data.message || data.Message || "تم بنجاح",
-        statusCode: res.status,
+        ...data,
+        statusCode: response.status,
       }
     } catch (err: any) {
-      console.error("🚨 Profile Network Error:", err)
+      console.error("🚨 Profile API Request Error:", err)
 
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الاتصال. حاول مجددًا.",
-          statusCode: 408,
+          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+        }
+      }
+
+      if (err.name === "TypeError" && err.message.includes("fetch")) {
+        return {
+          success: false,
+          message: `فشل في الاتصال بخادم الملف الشخصي. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
         }
       }
 
       return {
         success: false,
-        message: "حدث خطأ في الشبكة. تحقق من اتصالك بالإنترنت.",
-        statusCode: 0,
+        message: "حدث خطأ في الشبكة أثناء تحميل الملف الشخصي.",
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
       }
     }
   }
 
-  // Test connection
-  async testConnection(): Promise<boolean> {
-    const endpoint = await this.findWorkingEndpoint()
-    return endpoint !== null
+  // Profile Management
+  async getProfile(): Promise<SecureAuthResponse<UserProfileDto>> {
+    console.log("👤 Fetching user profile...")
+    return this.request<UserProfileDto>("/Profile/get-profile", {
+      method: "GET",
+    })
   }
 
-  // Profile endpoints
-  async getDashboard(): Promise<ApiResponse<any>> {
-    return this.request("/profile/dashboard")
-  }
-
-  async getProfile(): Promise<ApiResponse<UserProfileDto>> {
-    return this.request<UserProfileDto>("/profile")
-  }
-
-  async updateProfile(data: UserProfileUpdateDto): Promise<ApiResponse<any>> {
-    console.log("📝 Updating profile with data:", data)
-    return this.request("/profile/update", {
-      method: "POST",
+  async updateProfile(data: UserProfileUpdateDto): Promise<SecureAuthResponse> {
+    console.log("📝 Updating user profile:", data)
+    return this.request("/Profile/update-profile", {
+      method: "PUT",
       body: JSON.stringify(data),
     })
   }
 
-  async changeUserName(data: ChangeUserNameDto): Promise<ApiResponse<ChangeUserNameResultDto>> {
-    return this.request<ChangeUserNameResultDto>("/profile/change-name", {
-      method: "POST",
+  async changeUserName(data: ChangeUserNameDto): Promise<SecureAuthResponse<ChangeUserNameResultDto>> {
+    console.log("✏️ Changing username:", data.newFullName)
+    return this.request<ChangeUserNameResultDto>("/Profile/change-username", {
+      method: "PUT",
       body: JSON.stringify(data),
     })
   }
 
-  async changePassword(data: ChangePasswordDto): Promise<ApiResponse<any>> {
-    return this.request("/profile/change-password", {
-      method: "POST",
+  async changePassword(data: ChangePasswordDto): Promise<SecureAuthResponse> {
+    console.log("🔒 Changing password...")
+    return this.request("/Profile/change-password", {
+      method: "PUT",
       body: JSON.stringify(data),
     })
   }
 
-  // Payment endpoints
-  async payForCourse(data: PaymentRequestDto): Promise<ApiResponse<any>> {
-    return this.request("/profile/pay-course", {
-      method: "POST",
-      body: JSON.stringify(data),
-    })
-  }
-
-  async confirmPayment(paymentId: number): Promise<ApiResponse<any>> {
-    return this.request(`/profile/confirm-payment/${paymentId}`, {
-      method: "POST",
-    })
-  }
-
-  // Course endpoints
-  async getMyCourses(): Promise<ApiResponse<MyCourseDto[]>> {
-    return this.request<MyCourseDto[]>("/profile/my-courses")
-  }
-
-  async getFavoriteCourses(): Promise<ApiResponse<CourseDto[]>> {
-    return this.request<CourseDto[]>("/profile/favorite-courses")
-  }
-
-  async addToFavorites(courseId: number): Promise<ApiResponse<any>> {
-    return this.request(`/profile/favorites/${courseId}`, { method: "POST" })
-  }
-
-  async removeFromFavorites(courseId: number): Promise<ApiResponse<any>> {
-    return this.request(`/profile/favorites/${courseId}`, { method: "DELETE" })
-  }
-
-  // Photo endpoints
-  async uploadProfilePhoto(file: File): Promise<ApiResponse<any>> {
-    const formData = new FormData()
-    formData.append("file", file)
-
-    const base = await this.findWorkingEndpoint()
-    if (!base) {
-      return {
-        success: false,
-        message: "لا يمكن الوصول للخادم",
-        statusCode: 0,
-      }
-    }
-
-    const token = localStorage.getItem("accessToken")
-    const url = `${base}/profile/upload-photo`
-
+  async uploadProfilePhoto(file: File): Promise<SecureAuthResponse<{ profilePhoto: string }>> {
     try {
-      const res = await fetch(url, {
+      const baseUrl = await this.findWorkingEndpoint()
+      if (!baseUrl) {
+        return {
+          success: false,
+          message: "لا يمكن الاتصال بالخادم لرفع الصورة",
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+        }
+      }
+
+      const url = `${baseUrl}/Profile/upload-photo`
+      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+
+      const formData = new FormData()
+      formData.append("profilePhoto", file)
+
+      const response = await fetch(url, {
         method: "POST",
         headers: {
-          ...(token && { Authorization: `Bearer ${token}` }),
+          Authorization: token ? `Bearer ${token}` : "",
         },
-        credentials: "include",
         body: formData,
+        signal: AbortSignal.timeout(30000),
       })
 
-      const data = await res.json()
+      console.log(`📡 Photo Upload Response Status: ${response.status}`)
 
-      return {
-        success: res.ok,
-        data: res.ok ? data.data || data : undefined,
-        message: data.message || (res.ok ? "تم رفع الصورة بنجاح" : "فشل في رفع الصورة"),
-        statusCode: res.status,
+      let data: SecureAuthResponse<{ profilePhoto: string }>
+      const contentType = response.headers.get("content-type")
+
+      if (contentType?.includes("application/json")) {
+        data = await response.json()
+      } else {
+        const text = await response.text()
+        data = {
+          success: response.ok,
+          message: text || response.statusText,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+          statusCode: response.status,
+        }
       }
-    } catch (err) {
+
+      console.log(`📋 Photo Upload Response:`, data)
+      return data
+    } catch (err: any) {
+      console.error("🚨 Photo Upload Error:", err)
       return {
         success: false,
         message: "حدث خطأ أثناء رفع الصورة",
-        statusCode: 0,
+        timestamp: new Date().toISOString(),
+        requestId: Math.random().toString(36).substr(2, 8),
       }
     }
   }
 
-  async deleteProfilePhoto(): Promise<ApiResponse<any>> {
-    return this.request("/profile/delete-photo", { method: "DELETE" })
+  async deleteProfilePhoto(): Promise<SecureAuthResponse> {
+    console.log("🗑️ Deleting profile photo...")
+    return this.request("/Profile/delete-photo", {
+      method: "DELETE",
+    })
   }
 
-  // Stats endpoint
-  async getUserStats(): Promise<ApiResponse<StudentStatsDto>> {
-    return this.request<StudentStatsDto>("/profile/stats")
-  }
-
-  // Activity endpoint
-  async getRecentActivities(limit = 10): Promise<ApiResponse<UserActivityDto[]>> {
-    return this.request<UserActivityDto[]>(`/profile/recent-activities?limit=${limit}`)
+  async testConnection(): Promise<boolean> {
+    const endpoint = await this.findWorkingEndpoint()
+    return endpoint !== null
   }
 }
 

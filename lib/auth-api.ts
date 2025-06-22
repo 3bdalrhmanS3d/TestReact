@@ -5,128 +5,155 @@ import type {
   ForgetPasswordRequestDto,
   ResetPasswordRequestDto,
   RefreshTokenRequestDto,
-  SecureAuthResponse,
+  AutoLoginRequestDto,
   SigninResponseDto,
   RefreshTokenResponseDto,
   AutoLoginResponseDto,
+  SecureAuthResponse,
 } from "@/types/auth"
 
-// API endpoints configuration
-const API_ENDPOINTS = ["http://localhost:5268/api", "https://localhost:7217/api"]
+// API Endpoints with environment-based configuration
+const API_ENDPOINTS = [
+  process.env.NEXT_PUBLIC_API_URL,
+  "http://localhost:5268/api",
+  "https://localhost:7217/api", // الـ port الصحيح
+].filter(Boolean) as string[]
 
-let CURRENT_API_BASE_URL = API_ENDPOINTS[0]
 
 class AuthApiClient {
+  private baseUrl: string | null = null
+
+  constructor() {
+    this.findWorkingEndpoint()
+  }
+
   private async findWorkingEndpoint(): Promise<string | null> {
+    if (this.baseUrl) return this.baseUrl
+
     for (const endpoint of API_ENDPOINTS) {
       try {
-        console.log(`🔍 Testing endpoint: ${endpoint}`)
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 3000)
+        const testUrl = `${endpoint}/Auth/health-check`
+        const response = await fetch(testUrl, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+          signal: AbortSignal.timeout(5000),
+        })
 
-        const res = await fetch(`${endpoint.replace("/api", "")}/health`, { signal: controller.signal })
-        clearTimeout(timeoutId)
-
-        if (res.ok) {
-          console.log(`✅ Found working endpoint: ${endpoint}`)
-          CURRENT_API_BASE_URL = endpoint
+        if (response.ok || response.status === 404) {
+          console.log(`✅ API endpoint found: ${endpoint}`)
+          this.baseUrl = endpoint
           return endpoint
         }
       } catch (err) {
-        console.log(`❌ Endpoint failed: ${endpoint}`, err)
+        console.log(`❌ Failed to connect to: ${endpoint}`)
       }
     }
-    console.log("🚨 No working endpoint found")
+
+    console.error("🚨 No working API endpoints found")
     return null
   }
 
-  private getAuthHeaders(): HeadersInit {
-    const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
-    return {
-      "Content-Type": "application/json",
-      ...(token && { Authorization: `Bearer ${token}` }),
-    }
-  }
-
-  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
-    const base = await this.findWorkingEndpoint()
-    if (!base) {
-      return {
-        success: false,
-        message: `لا يمكن الوصول للخادم. جرّب العناوين:\n${API_ENDPOINTS.join("\n")}`,
-        timestamp: new Date().toISOString(),
-        requestId: Math.random().toString(36).substr(2, 8),
-      }
-    }
-
-    const url = `${base}${endpoint}`
-    console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
-
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
     try {
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 15000)
-
-      const res = await fetch(url, {
-        ...options,
-        headers: {
-          ...this.getAuthHeaders(),
-          ...options.headers,
-        },
-        credentials: "include",
-        signal: controller.signal,
-      })
-      clearTimeout(timeoutId)
-
-      console.log(`📡 Response Status: ${res.status} ${res.statusText}`)
-
-      let data: any
-      const ct = res.headers.get("content-type") || ""
-      if (ct.includes("application/json")) {
-        data = await res.json()
-        console.log("📥 Response Data:", data)
-      } else {
-        const txt = await res.text()
-        console.log("📄 Response Text:", txt)
-        data = { message: txt || res.statusText }
-      }
-
-      if (!res.ok) {
-        console.warn("❌ API Warning:", data)
-        const msg = data.message ?? data.Message ?? res.statusText ?? `خطأ في الخادم (${res.status})`
+      const baseUrl = await this.findWorkingEndpoint()
+      if (!baseUrl) {
         return {
           success: false,
-          message: msg,
-          errorCode: data.errorCode || data.ErrorCode,
+          message: `لا يمكن الاتصال بالخادم. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
       }
 
+      const url = `${baseUrl}${endpoint}`
+      console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
+
+      // Get token from localStorage if available
+      const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+
+      const defaultHeaders: HeadersInit = {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      }
+
+      if (token) {
+        defaultHeaders.Authorization = `Bearer ${token}`
+      }
+
+      const config: RequestInit = {
+        ...options,
+        headers: {
+          ...defaultHeaders,
+          ...options.headers,
+        },
+        signal: AbortSignal.timeout(30000),
+      }
+
+      const response = await fetch(url, config)
+      console.log(`📡 Response Status: ${response.status}`)
+
+      let data: SecureAuthResponse<T>
+      const contentType = response.headers.get("content-type")
+
+      if (contentType?.includes("application/json")) {
+        data = await response.json()
+      } else {
+        const text = await response.text()
+        data = {
+          success: response.ok,
+          message: text || response.statusText,
+          timestamp: new Date().toISOString(),
+          requestId: Math.random().toString(36).substr(2, 8),
+          statusCode: response.status,
+        }
+      }
+
+      console.log(`📋 Response Data:`, data)
+
+      // Handle token expiration
+      if (response.status === 401 && data.errorCode === "AUTH_005") {
+        const refreshToken = localStorage.getItem("refreshToken")
+        if (refreshToken) {
+          console.log("🔄 Attempting token refresh...")
+          const refreshResult = await this.refreshToken({ oldRefreshToken: refreshToken })
+          if (refreshResult.success) {
+            // Retry the original request with new token
+            return this.request(endpoint, options)
+          }
+        }
+        // Clear tokens if refresh failed
+        localStorage.removeItem("accessToken")
+        localStorage.removeItem("refreshToken")
+      }
+
       return {
-        success: true,
-        data: data.data ?? data.Data ?? data,
-        message: data.message ?? data.Message ?? "Success",
-        timestamp: new Date().toISOString(),
-        requestId: Math.random().toString(36).substr(2, 8),
+        ...data,
+        statusCode: response.status,
       }
     } catch (err: any) {
-      console.warn("🚨 Network Warning:", err)
+      console.error("🚨 API Request Error:", err)
+
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الاتصال. حاول مجددًا.",
+          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
       }
-      if (err.message.includes("fetch")) {
+
+      if (err.name === "TypeError" && err.message.includes("fetch")) {
         return {
           success: false,
-          message: `فشل في الاتصال بالخادم. العناوين المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          message: `فشل في الاتصال بالخادم. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
       }
+
       return {
         success: false,
         message: "حدث خطأ في الشبكة. تحقق من اتصالك بالإنترنت.",
@@ -172,6 +199,11 @@ class AuthApiClient {
     if (response.success && response.data && typeof window !== "undefined") {
       localStorage.setItem("accessToken", response.data.token)
       localStorage.setItem("refreshToken", response.data.refreshToken)
+      
+      // Store auto login token if provided
+      if (response.data.autoLoginToken) {
+        localStorage.setItem("autoLoginToken", response.data.autoLoginToken)
+      }
     }
 
     return response
@@ -215,6 +247,7 @@ class AuthApiClient {
     if (typeof window !== "undefined") {
       localStorage.removeItem("accessToken")
       localStorage.removeItem("refreshToken")
+      localStorage.removeItem("autoLoginToken")
     }
     return response
   }
