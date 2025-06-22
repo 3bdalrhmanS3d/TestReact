@@ -5,66 +5,25 @@ import type {
   ForgetPasswordRequestDto,
   ResetPasswordRequestDto,
   RefreshTokenRequestDto,
+  AutoLoginRequestDto,
   SigninResponseDto,
   RefreshTokenResponseDto,
   AutoLoginResponseDto,
   SecureAuthResponse,
 } from "@/types/auth"
 
-// API Endpoints with environment-based configuration
-const API_ENDPOINTS = [
-  "https://localhost:7217/api", // Primary HTTPS endpoint
-  "http://localhost:5268/api", // Secondary HTTP endpoint
-  process.env.NEXT_PUBLIC_API_URL,
-].filter(Boolean) as string[]
+// Single local API endpoint - no fallbacks
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"
 
 class AuthApiClient {
-  private baseUrl: string | null = null
+  private baseUrl: string = API_BASE_URL
 
-  constructor() {
-    this.findWorkingEndpoint()
-  }
-
-  private async findWorkingEndpoint(): Promise<string | null> {
-    if (this.baseUrl) return this.baseUrl
-
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        // Try the health endpoint that your backend provides
-        const healthUrl = `${endpoint.replace("/api", "")}/health`
-        const response = await fetch(healthUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(5000),
-        })
-
-        if (response.ok) {
-          console.log(`✅ API endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch (err) {
-        console.log(`❌ Failed to connect to: ${endpoint}`)
-      }
-    }
-
-    console.error("🚨 No working API endpoints found")
-    return null
-  }
-
-  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: `لا يمكن الاتصال بالخادم. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      const url = `${baseUrl}${endpoint}`
+      const url = `${this.baseUrl}${endpoint}`
       console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
 
       // Get token from localStorage if available
@@ -85,7 +44,7 @@ class AuthApiClient {
           ...defaultHeaders,
           ...options.headers,
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000), // 10 seconds timeout
       }
 
       const response = await fetch(url, config)
@@ -135,7 +94,7 @@ class AuthApiClient {
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+          message: "انتهت مهلة الطلب. تحقق من تشغيل الباك إند.",
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
@@ -144,7 +103,7 @@ class AuthApiClient {
       if (err.name === "TypeError" && err.message.includes("fetch")) {
         return {
           success: false,
-          message: `فشل في الاتصال بالخادم. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          message: `فشل في الاتصال بالخادم: ${this.baseUrl}`,
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
@@ -152,7 +111,7 @@ class AuthApiClient {
 
       return {
         success: false,
-        message: "حدث خطأ في الشبكة. تحقق من اتصالك بالإنترنت.",
+        message: "حدث خطأ في الشبكة.",
         timestamp: new Date().toISOString(),
         requestId: Math.random().toString(36).substr(2, 8),
       }
@@ -160,8 +119,15 @@ class AuthApiClient {
   }
 
   async testConnection(): Promise<boolean> {
-    const endpoint = await this.findWorkingEndpoint()
-    return endpoint !== null
+    try {
+      const response = await fetch(`${this.baseUrl}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
   }
 
   // Auth Endpoints
@@ -195,7 +161,7 @@ class AuthApiClient {
     if (response.success && response.data && typeof window !== "undefined") {
       localStorage.setItem("accessToken", response.data.token)
       localStorage.setItem("refreshToken", response.data.refreshToken)
-
+      
       // Store auto login token if provided
       if (response.data.autoLoginToken) {
         localStorage.setItem("autoLoginToken", response.data.autoLoginToken)

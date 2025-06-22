@@ -109,8 +109,8 @@ export interface CourseFilterDto {
   isActive?: boolean
   minPrice?: number
   maxPrice?: number
-  sortBy?: "name" | "price" | "rating" | "created"
-  sortDirection?: "asc" | "desc"
+  sortBy?: 'name' | 'price' | 'rating' | 'created'
+  sortDirection?: 'asc' | 'desc'
 }
 
 export interface CoursePagedResponseDto {
@@ -123,59 +123,18 @@ export interface CoursePagedResponseDto {
   hasPrevious: boolean
 }
 
-// API Endpoints with environment-based configuration
-const API_ENDPOINTS = [
-  "https://localhost:7217/api", // Primary HTTPS endpoint
-  "http://localhost:5268/api", // Secondary HTTP endpoint
-  process.env.NEXT_PUBLIC_API_URL,
-].filter(Boolean) as string[]
+// API Endpoint - local only
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"
 
 class CourseApiClient {
-  private baseUrl: string | null = null
+  private baseUrl: string = API_BASE_URL
 
-  constructor() {
-    this.findWorkingEndpoint()
-  }
-
-  private async findWorkingEndpoint(): Promise<string | null> {
-    if (this.baseUrl) return this.baseUrl
-
-    // Try general health endpoint first
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        const healthUrl = `${endpoint.replace(/\/api\/?$/, "")}/health`
-        const res = await fetch(healthUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(5000),
-        })
-        if (res.ok) {
-          console.log(`✅ Courses API endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch (err) {
-        console.log(`❌ Failed to connect to Courses API: ${endpoint}`)
-      }
-    }
-
-    console.error("🚨 No working Courses API endpoints found")
-    return null
-  }
-
-  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: `لا يمكن الاتصال بخادم الكورسات. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      const url = `${baseUrl}${endpoint}`
+      const url = `${this.baseUrl}${endpoint}`
       console.log(`📚 Courses API Request: ${options.method || "GET"} ${url}`)
 
       // Get token from localStorage
@@ -196,7 +155,7 @@ class CourseApiClient {
           ...defaultHeaders,
           ...options.headers,
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       }
 
       const response = await fetch(url, config)
@@ -230,7 +189,7 @@ class CourseApiClient {
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+          message: "انتهت مهلة الطلب.",
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
@@ -248,9 +207,11 @@ class CourseApiClient {
   // Get all courses with pagination and filters
   async getCourses(filter: CourseFilterDto): Promise<SecureAuthResponse<CoursePagedResponseDto>> {
     console.log("📚 Fetching courses with filter:", filter)
+    
     const params = new URLSearchParams()
     params.append("pageNumber", filter.pageNumber.toString())
     params.append("pageSize", filter.pageSize.toString())
+    
     if (filter.searchTerm) params.append("searchTerm", filter.searchTerm)
     if (filter.instructorId) params.append("instructorId", filter.instructorId.toString())
     if (filter.isActive !== undefined) params.append("isActive", filter.isActive.toString())
@@ -258,88 +219,110 @@ class CourseApiClient {
     if (filter.maxPrice !== undefined) params.append("maxPrice", filter.maxPrice.toString())
     if (filter.sortBy) params.append("sortBy", filter.sortBy)
     if (filter.sortDirection) params.append("sortDirection", filter.sortDirection)
-    return this.request<CoursePagedResponseDto>(`/Courses/get-courses?${params}`, { method: "GET" })
+
+    return this.request<CoursePagedResponseDto>(`/Courses/get-courses?${params}`, {
+      method: "GET",
+    })
   }
 
   // Get user's enrolled courses
   async getEnrolledCourses(): Promise<SecureAuthResponse<CourseDto[]>> {
     console.log("📚 Fetching enrolled courses...")
-    return this.request<CourseDto[]>("/Courses/enrolled-courses", { method: "GET" })
+    return this.request<CourseDto[]>("/Courses/enrolled-courses", {
+      method: "GET",
+    })
   }
 
   // Get instructor's courses
   async getInstructorCourses(): Promise<SecureAuthResponse<CourseDto[]>> {
     console.log("👨‍🏫 Fetching instructor courses...")
-    return this.request<CourseDto[]>("/Courses/instructor-courses", { method: "GET" })
+    return this.request<CourseDto[]>("/Courses/instructor-courses", {
+      method: "GET",
+    })
   }
 
   // Get course by ID
   async getCourse(courseId: number): Promise<SecureAuthResponse<CourseDto>> {
     console.log("📖 Fetching course:", courseId)
-    return this.request<CourseDto>(`/Courses/get-course/${courseId}`, { method: "GET" })
+    return this.request<CourseDto>(`/Courses/get-course/${courseId}`, {
+      method: "GET",
+    })
   }
 
   // Create new course (Instructor/Admin only)
   async createCourse(data: CreateCourseDto): Promise<SecureAuthResponse<CourseDto>> {
     console.log("➕ Creating course:", data.courseName)
-    return this.request<CourseDto>("/Courses/create-course", { method: "POST", body: JSON.stringify(data) })
+    return this.request<CourseDto>("/Courses/create-course", {
+      method: "POST",
+      body: JSON.stringify(data),
+    })
   }
 
   // Update course (Instructor/Admin only)
   async updateCourse(data: UpdateCourseDto): Promise<SecureAuthResponse<CourseDto>> {
     console.log("✏️ Updating course:", data.courseId)
-    return this.request<CourseDto>("/Courses/update-course", { method: "PUT", body: JSON.stringify(data) })
+    return this.request<CourseDto>("/Courses/update-course", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    })
   }
 
   // Delete course (Instructor/Admin only)
   async deleteCourse(courseId: number): Promise<SecureAuthResponse> {
     console.log("🗑️ Deleting course:", courseId)
-    return this.request(`/Courses/delete-course/${courseId}`, { method: "DELETE" })
+    return this.request(`/Courses/delete-course/${courseId}`, {
+      method: "DELETE",
+    })
   }
 
   // Enroll in course
   async enrollInCourse(courseId: number): Promise<SecureAuthResponse<EnrollmentDto>> {
     console.log("📝 Enrolling in course:", courseId)
-    return this.request<EnrollmentDto>("/Courses/enroll", { method: "POST", body: JSON.stringify({ courseId }) })
+    return this.request<EnrollmentDto>("/Courses/enroll", {
+      method: "POST",
+      body: JSON.stringify({ courseId }),
+    })
   }
 
   // Get course structure (levels, sections, content)
   async getCourseStructure(courseId: number): Promise<SecureAuthResponse<CourseLevelDto[]>> {
     console.log("🏗️ Fetching course structure:", courseId)
-    return this.request<CourseLevelDto[]>(`/Courses/structure/${courseId}`, { method: "GET" })
+    return this.request<CourseLevelDto[]>(`/Courses/structure/${courseId}`, {
+      method: "GET",
+    })
   }
 
   // Get course progress
   async getCourseProgress(courseId: number): Promise<SecureAuthResponse<CourseProgressDto>> {
     console.log("📊 Fetching course progress:", courseId)
-    return this.request<CourseProgressDto>(`/Courses/progress/${courseId}`, { method: "GET" })
+    return this.request<CourseProgressDto>(`/Courses/progress/${courseId}`, {
+      method: "GET",
+    })
   }
 
   // Upload course image
   async uploadCourseImage(courseId: number, file: File): Promise<SecureAuthResponse<{ courseImage: string }>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: "لا يمكن الاتصال بالخادم لرفع الصورة",
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-      const url = `${baseUrl}/Courses/upload-image/${courseId}`
+      const url = `${this.baseUrl}/Courses/upload-image/${courseId}`
       const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
+
       const formData = new FormData()
       formData.append("courseImage", file)
+
       const response = await fetch(url, {
         method: "POST",
-        headers: { Authorization: token ? `Bearer ${token}` : "" },
+        headers: {
+          Authorization: token ? `Bearer ${token}` : "",
+        },
         body: formData,
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       })
+
       console.log(`📡 Course Image Upload Response Status: ${response.status}`)
+
       let data: SecureAuthResponse<{ courseImage: string }>
       const contentType = response.headers.get("content-type")
+
       if (contentType?.includes("application/json")) {
         data = await response.json()
       } else {
@@ -352,6 +335,7 @@ class CourseApiClient {
           statusCode: response.status,
         }
       }
+
       console.log(`📋 Course Image Upload Response:`, data)
       return data
     } catch (err: any) {
@@ -368,12 +352,21 @@ class CourseApiClient {
   // Get course statistics (for instructors)
   async getCourseStats(courseId: number): Promise<SecureAuthResponse<any>> {
     console.log("📈 Fetching course stats:", courseId)
-    return this.request(`/Courses/stats/${courseId}`, { method: "GET" })
+    return this.request(`/Courses/stats/${courseId}`, {
+      method: "GET",
+    })
   }
 
   async testConnection(): Promise<boolean> {
-    const endpoint = await this.findWorkingEndpoint()
-    return endpoint !== null
+    try {
+      const response = await fetch(`${this.baseUrl}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
   }
 }
 

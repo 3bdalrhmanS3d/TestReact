@@ -154,7 +154,7 @@ export default function RootLayout({
             />
           </CoursesProvider>
         </AuthProvider>
-
+              
         {/* Analytics and Performance Monitoring */}
         {process.env.NODE_ENV === 'production' && (
           <>
@@ -212,6 +212,7 @@ export default function RootLayout({
             }}
           />
         )}
+        
       </body>
     </html>
   )

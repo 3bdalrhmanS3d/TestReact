@@ -56,13 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const isAuthenticated = !!user
 
-  // Check API availability
+  // Check API availability - simplified
   useEffect(() => {
     const checkApiAvailability = async () => {
       try {
         const authAvailable = await authApi.testConnection()
-        const profileAvailable = await profileApi.testConnection()
-        setApiAvailable(authAvailable || profileAvailable)
+        setApiAvailable(authAvailable)
+        if (!authAvailable) {
+          console.warn("⚠️ API not available at:", process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api")
+        }
       } catch (err) {
         console.error("🚨 API availability check failed:", err)
         setApiAvailable(false)
@@ -80,16 +82,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         // Check for existing token
         const accessToken = localStorage.getItem("accessToken")
-        const refreshTokenValue = localStorage.getItem("refreshToken")
+        const refreshToken = localStorage.getItem("refreshToken")
         
         if (accessToken) {
           console.log("🔑 Found access token, loading profile...")
           await loadProfile()
-        } else if (refreshTokenValue) {
+        } else if (refreshToken) {
           console.log("🔄 Found refresh token, attempting refresh...")
-          const success = await refreshToken()
+          const success = await refreshTokenInternal()
           if (success) {
             await loadProfile()
+          } else {
+            setLoading(false)
           }
         } else {
           // Try auto login from cookie
@@ -125,14 +129,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (response.success && response.data) {
         console.log("✅ Profile loaded successfully")
-        const authUser: AuthUser = {
+        // Map UserProfileDto to AuthUser
+        const mappedUser: AuthUser = {
           userId: response.data.id,
           email: response.data.emailAddress,
-          // Add other AuthUser properties here, mapping from response.data as needed
+          // Add other required AuthUser properties here, mapping from response.data
           ...(response.data as any)
         }
-        setProfile(authUser)
-        setUser(authUser)
+        setProfile(mappedUser)
+        setUser(mappedUser)
         setIsProfileComplete(response.data.isProfileComplete)
         setRequiredFields(response.data.requiredFields || null)
         
@@ -343,7 +348,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const refreshToken = async (): Promise<boolean> => {
+  const refreshTokenInternal = async (): Promise<boolean> => {
     try {
       const oldRefreshToken = localStorage.getItem("refreshToken")
       if (!oldRefreshToken) {
@@ -421,7 +426,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signin,
         signup,
         logout,
-        refreshToken,
+        refreshToken: refreshTokenInternal,
         loadProfile,
         updateProfile,
         changeUserName,

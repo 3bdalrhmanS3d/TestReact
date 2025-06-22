@@ -9,63 +9,19 @@ import type {
 } from "@/types/notifications"
 import type { SecureAuthResponse } from "@/types/auth"
 
-// API Endpoints with environment-based configuration
-const API_ENDPOINTS = [
-  process.env.NEXT_PUBLIC_API_URL,
-  "http://localhost:5268/api",
-  "https://localhost:7217/api", // الـ port الصحيح
-].filter(Boolean) as string[]
+// Single local API endpoint
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"
 
 class NotificationApiClient {
-  private baseUrl: string | null = null
+  private baseUrl: string = API_BASE_URL
   private eventSource: EventSource | null = null
-
-  constructor() {
-    this.findWorkingEndpoint()
-  }
-
-  private async findWorkingEndpoint(): Promise<string | null> {
-    if (this.baseUrl) return this.baseUrl
-
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        const testUrl = `${endpoint}/Notifications/health-check`
-        const response = await fetch(testUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(5000),
-        })
-
-        if (response.ok || response.status === 404) {
-          console.log(`✅ Notifications API endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch (err) {
-        console.log(`❌ Failed to connect to Notifications API: ${endpoint}`)
-      }
-    }
-
-    console.error("🚨 No working Notifications API endpoints found")
-    return null
-  }
 
   private async request<T = any>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<SecureAuthResponse<T>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: `لا يمكن الاتصال بخادم الإشعارات. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      const url = `${baseUrl}${endpoint}`
+      const url = `${this.baseUrl}${endpoint}`
       console.log(`🔔 Notifications API Request: ${options.method || "GET"} ${url}`)
 
       // Get token from localStorage
@@ -86,7 +42,7 @@ class NotificationApiClient {
           ...defaultHeaders,
           ...options.headers,
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       }
 
       const response = await fetch(url, config)
@@ -120,7 +76,7 @@ class NotificationApiClient {
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
+          message: "انتهت مهلة الطلب.",
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
@@ -226,40 +182,33 @@ class NotificationApiClient {
       return () => {}
     }
 
-    this.findWorkingEndpoint().then((baseUrl) => {
-      if (!baseUrl) {
-        console.error("🚨 No working endpoint for real-time notifications")
-        return
-      }
-
-      const url = `${baseUrl}/Notifications/real-time?token=${encodeURIComponent(token)}`
+    const url = `${this.baseUrl}/Notifications/real-time?token=${encodeURIComponent(token)}`
+    
+    try {
+      this.eventSource = new EventSource(url)
       
-      try {
-        this.eventSource = new EventSource(url)
-        
-        this.eventSource.onopen = (event) => {
-          console.log("✅ Real-time notifications connected")
-          onOpen?.(event)
-        }
-        
-        this.eventSource.onmessage = (event) => {
-          try {
-            const data: RealTimeNotificationDto = JSON.parse(event.data)
-            console.log("🔔 Real-time notification received:", data)
-            onNotification(data)
-          } catch (err) {
-            console.error("🚨 Failed to parse real-time notification:", err)
-          }
-        }
-        
-        this.eventSource.onerror = (event) => {
-          console.error("🚨 Real-time notifications error:", event)
-          onError?.(event)
-        }
-      } catch (err) {
-        console.error("🚨 Failed to establish real-time notifications:", err)
+      this.eventSource.onopen = (event) => {
+        console.log("✅ Real-time notifications connected")
+        onOpen?.(event)
       }
-    })
+      
+      this.eventSource.onmessage = (event) => {
+        try {
+          const data: RealTimeNotificationDto = JSON.parse(event.data)
+          console.log("🔔 Real-time notification received:", data)
+          onNotification(data)
+        } catch (err) {
+          console.error("🚨 Failed to parse real-time notification:", err)
+        }
+      }
+      
+      this.eventSource.onerror = (event) => {
+        console.error("🚨 Real-time notifications error:", event)
+        onError?.(event)
+      }
+    } catch (err) {
+      console.error("🚨 Failed to establish real-time notifications:", err)
+    }
 
     // Return disconnect function
     return () => {
@@ -281,8 +230,15 @@ class NotificationApiClient {
   }
 
   async testConnection(): Promise<boolean> {
-    const endpoint = await this.findWorkingEndpoint()
-    return endpoint !== null
+    try {
+      const response = await fetch(`${this.baseUrl}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
   }
 }
 

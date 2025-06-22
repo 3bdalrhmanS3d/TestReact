@@ -7,61 +7,19 @@ import type {
   SecureAuthResponse,
 } from "@/types/auth"
 
-// API Endpoints with environment-based configuration
-const API_ENDPOINTS = [
-  "https://localhost:7217/api", // Primary HTTPS endpoint
-  "http://localhost:5268/api", // Secondary HTTP endpoint
-  process.env.NEXT_PUBLIC_API_URL,
-].filter(Boolean) as string[]
+// Single local API endpoint
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/api"
 
 class ProfileApiClient {
-  private baseUrl: string | null = null
+  private baseUrl: string = API_BASE_URL
 
-  constructor() {
-    this.findWorkingEndpoint()
-  }
-
-  private async findWorkingEndpoint(): Promise<string | null> {
-    if (this.baseUrl) return this.baseUrl
-
-    for (const endpoint of API_ENDPOINTS) {
-      try {
-        // Try the main health endpoint first
-        const healthUrl = `${endpoint.replace("/api", "")}/health`
-        const response = await fetch(healthUrl, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" },
-          signal: AbortSignal.timeout(5000),
-        })
-
-        if (response.ok) {
-          console.log(`✅ Profile API endpoint found: ${endpoint}`)
-          this.baseUrl = endpoint
-          return endpoint
-        }
-      } catch (err) {
-        console.log(`❌ Failed to connect to Profile API: ${endpoint}`)
-      }
-    }
-
-    console.error("🚨 No working Profile API endpoints found")
-    return null
-  }
-
-  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(
+    endpoint: string,
+    options: RequestInit = {}
+  ): Promise<SecureAuthResponse<T>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: `لا يمكن الاتصال بخادم الملف الشخصي. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      const url = `${baseUrl}${endpoint}`
-      console.log(`🌐 Profile API Request: ${options.method || "GET"} ${url}`)
+      const url = `${this.baseUrl}${endpoint}`
+      console.log(`👤 Profile API Request: ${options.method || "GET"} ${url}`)
 
       // Get token from localStorage
       const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
@@ -81,7 +39,7 @@ class ProfileApiClient {
           ...defaultHeaders,
           ...options.headers,
         },
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       }
 
       const response = await fetch(url, config)
@@ -115,16 +73,7 @@ class ProfileApiClient {
       if (err.name === "AbortError") {
         return {
           success: false,
-          message: "انتهت مهلة الطلب. يرجى المحاولة مرة أخرى.",
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      if (err.name === "TypeError" && err.message.includes("fetch")) {
-        return {
-          success: false,
-          message: `فشل في الاتصال بخادم الملف الشخصي. الخوادم المفحوصة:\n${API_ENDPOINTS.join("\n")}`,
+          message: "انتهت مهلة الطلب.",
           timestamp: new Date().toISOString(),
           requestId: Math.random().toString(36).substr(2, 8),
         }
@@ -173,17 +122,7 @@ class ProfileApiClient {
 
   async uploadProfilePhoto(file: File): Promise<SecureAuthResponse<{ profilePhoto: string }>> {
     try {
-      const baseUrl = await this.findWorkingEndpoint()
-      if (!baseUrl) {
-        return {
-          success: false,
-          message: "لا يمكن الاتصال بالخادم لرفع الصورة",
-          timestamp: new Date().toISOString(),
-          requestId: Math.random().toString(36).substr(2, 8),
-        }
-      }
-
-      const url = `${baseUrl}/Profile/upload-photo`
+      const url = `${this.baseUrl}/Profile/upload-photo`
       const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
 
       const formData = new FormData()
@@ -195,7 +134,7 @@ class ProfileApiClient {
           Authorization: token ? `Bearer ${token}` : "",
         },
         body: formData,
-        signal: AbortSignal.timeout(30000),
+        signal: AbortSignal.timeout(10000),
       })
 
       console.log(`📡 Photo Upload Response Status: ${response.status}`)
@@ -237,8 +176,15 @@ class ProfileApiClient {
   }
 
   async testConnection(): Promise<boolean> {
-    const endpoint = await this.findWorkingEndpoint()
-    return endpoint !== null
+    try {
+      const response = await fetch(`${this.baseUrl}/health`, {
+        method: "GET",
+        signal: AbortSignal.timeout(5000),
+      })
+      return response.ok
+    } catch {
+      return false
+    }
   }
 }
 
