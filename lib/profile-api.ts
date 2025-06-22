@@ -13,10 +13,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/
 class ProfileApiClient {
   private baseUrl: string = API_BASE_URL
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const url = `${this.baseUrl}${endpoint}`
       console.log(`👤 Profile API Request: ${options.method || "GET"} ${url}`)

@@ -5,7 +5,6 @@ import type {
   ForgetPasswordRequestDto,
   ResetPasswordRequestDto,
   RefreshTokenRequestDto,
-  AutoLoginRequestDto,
   SigninResponseDto,
   RefreshTokenResponseDto,
   AutoLoginResponseDto,
@@ -18,10 +17,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost:7217/
 class AuthApiClient {
   private baseUrl: string = API_BASE_URL
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const url = `${this.baseUrl}${endpoint}`
       console.log(`🌐 API Request: ${options.method || "GET"} ${url}`)
@@ -161,7 +157,7 @@ class AuthApiClient {
     if (response.success && response.data && typeof window !== "undefined") {
       localStorage.setItem("accessToken", response.data.token)
       localStorage.setItem("refreshToken", response.data.refreshToken)
-      
+
       // Store auto login token if provided
       if (response.data.autoLoginToken) {
         localStorage.setItem("autoLoginToken", response.data.autoLoginToken)

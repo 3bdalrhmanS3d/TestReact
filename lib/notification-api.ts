@@ -1,5 +1,4 @@
 import type {
-  NotificationDto,
   NotificationFilterDto,
   NotificationPagedResponseDto,
   NotificationStatsDto,
@@ -16,10 +15,11 @@ class NotificationApiClient {
   private baseUrl: string = API_BASE_URL
   private eventSource: EventSource | null = null
 
-  private async request<T = any>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<SecureAuthResponse<T>> {
+  constructor() {
+    this.findWorkingEndpoint()
+  }
+
+  private async request<T = any>(endpoint: string, options: RequestInit = {}): Promise<SecureAuthResponse<T>> {
     try {
       const url = `${this.baseUrl}${endpoint}`
       console.log(`🔔 Notifications API Request: ${options.method || "GET"} ${url}`)
@@ -94,11 +94,11 @@ class NotificationApiClient {
   // Get paginated notifications
   async getNotifications(filter: NotificationFilterDto): Promise<SecureAuthResponse<NotificationPagedResponseDto>> {
     console.log("🔔 Fetching notifications with filter:", filter)
-    
+
     const params = new URLSearchParams()
     params.append("pageNumber", filter.pageNumber.toString())
     params.append("pageSize", filter.pageSize.toString())
-    
+
     if (filter.isRead !== undefined) params.append("isRead", filter.isRead.toString())
     if (filter.type) params.append("type", filter.type)
     if (filter.priority) params.append("priority", filter.priority)
@@ -173,25 +173,25 @@ class NotificationApiClient {
   connectToRealTimeNotifications(
     onNotification: (notification: RealTimeNotificationDto) => void,
     onError?: (error: Event) => void,
-    onOpen?: (event: Event) => void
+    onOpen?: (event: Event) => void,
   ): () => void {
     const token = typeof window !== "undefined" ? localStorage.getItem("accessToken") : null
-    
+
     if (!token) {
       console.error("🚨 No token available for real-time notifications")
       return () => {}
     }
 
     const url = `${this.baseUrl}/Notifications/real-time?token=${encodeURIComponent(token)}`
-    
+
     try {
       this.eventSource = new EventSource(url)
-      
+
       this.eventSource.onopen = (event) => {
         console.log("✅ Real-time notifications connected")
         onOpen?.(event)
       }
-      
+
       this.eventSource.onmessage = (event) => {
         try {
           const data: RealTimeNotificationDto = JSON.parse(event.data)
@@ -201,7 +201,7 @@ class NotificationApiClient {
           console.error("🚨 Failed to parse real-time notification:", err)
         }
       }
-      
+
       this.eventSource.onerror = (event) => {
         console.error("🚨 Real-time notifications error:", event)
         onError?.(event)

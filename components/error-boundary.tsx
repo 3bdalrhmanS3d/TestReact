@@ -56,7 +56,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, Error
 
             {process.env.NODE_ENV === "development" && this.state.error && (
               <details className="mt-4 p-4 bg-gray-100 rounded text-sm">
-                <summary className="cursor-pointer font-medium">تفاصيل الخطأ (للمطورين)</summary>
+                <summary className="cursor-pointer font-medium">تفاصيل الخطأ (للمطوري��)</summary>
                 <pre className="mt-2 whitespace-pre-wrap text-xs">{this.state.error.toString()}</pre>
               </details>
             )}
